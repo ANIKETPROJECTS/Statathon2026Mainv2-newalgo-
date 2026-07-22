@@ -1,6 +1,6 @@
-# [Project name]
+# AIRAVATA DEA
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A CSV/fixed-width data profiler and privacy risk assessment tool — upload layout files and data files, profile columns, anonymize sensitive fields, and export reports.
 
 ## Run & Operate
 

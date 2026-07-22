@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "bash"]
+modules = ["nodejs-20", "web", "bash", "postgresql-16"]
 
 [deployment]
 router = "application"
@@ -29,7 +29,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=5000 node --enable-source-maps artifacts/api-server/dist/index.mjs"
+args = "pnpm --filter @workspace/csv-profiler run dev"
 waitForPort = 5000
 
 [agent]
