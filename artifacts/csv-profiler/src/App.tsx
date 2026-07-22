@@ -2,12 +2,12 @@ import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Shield } from "lucide-react";
+import { Shield, Info } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import FWFConverter from "@/pages/FWFConverter";
+import InfoPage from "@/pages/Info";
 import RiskAssessmentSingle, { pageCache } from "@/pages/RiskAssessmentSingle";
 import RiskAssessmentComparison from "@/pages/RiskAssessmentComparison";
-import { InfoModal } from "@/components/InfoModal";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,7 +41,13 @@ function AppLayout() {
 
           <div className="flex-1" />
 
-          <InfoModal />
+          <button
+            onClick={() => navigate("/info")}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 transition-all shadow-sm"
+          >
+            <Info className="w-4 h-4" />
+            Info
+          </button>
 
           {/* Risk Assessment nav — split buttons */}
           <div className="flex items-center gap-1">
@@ -94,6 +100,7 @@ function AppLayout() {
         <Switch>
           <Route path="/" component={FWFConverter} />
           <Route path="/fwf" component={FWFConverter} />
+          <Route path="/info" component={InfoPage} />
           <Route path="/risk-assessment/original">
             {() => <RiskAssessmentSingle key="original" mode="original" />}
           </Route>
