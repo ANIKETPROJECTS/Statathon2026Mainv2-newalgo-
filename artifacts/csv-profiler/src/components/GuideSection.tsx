@@ -1293,7 +1293,195 @@ export function GuideSection() {
                 </div>
               </div>
 
+              {/* ── WHY THESE 4 OPERATIONS ── */}
+              <div className="border-2 border-indigo-200 rounded-xl overflow-hidden mb-6">
+                <div className="bg-indigo-600 px-5 py-3 flex items-center gap-3">
+                  <span className="text-white font-black text-base">🎯</span>
+                  <span className="text-white font-bold text-base">Why exactly these 4 operations?</span>
+                </div>
+                <div className="p-5 bg-indigo-50 space-y-4">
+                  <p className="text-sm text-indigo-900 leading-relaxed">
+                    The goal is to scramble a character's alphabet position in ways that are <strong>mathematically diverse</strong>, <strong>always reversible</strong>, and <strong>together cover every possible type of modular bijection</strong> on a finite alphabet. Each operation was chosen because it attacks a different weakness that a single operation alone would leave open.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="bg-white border border-indigo-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="bg-amber-400 text-white text-[10px] font-black px-2 py-0.5 rounded-full">Add</span>
+                        <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">Subtract</span>
+                        <span className="text-xs font-bold text-slate-500 ml-1">linear shift pair</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Add and Subtract are <strong>additive inverses</strong> — if the key applies an Add by 3 in one sub-op and a Subtract by 3 in another, they partially cancel. This is intentional: it makes the net shift unpredictable without knowing all 5 keystream bytes. Using both directions means an attacker cannot assume the value always increases or always decreases.
+                      </p>
+                    </div>
+                    <div className="bg-white border border-indigo-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="bg-violet-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">Multiply</span>
+                        <span className="text-xs font-bold text-slate-500 ml-1">non-linear jump</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Multiplication is a fundamentally <strong>different type of operation</strong> from addition. It does not move the value forward or backward by a fixed step — it stretches and wraps the entire alphabet in a non-uniform way. A character at position 3 multiplied by 7 jumps to position 1 (mod 10), which is nowhere near 3. This breaks any remaining linear pattern that Add/Subtract alone would leave. Crucially, using only <em>coprime</em> multipliers ensures the operation is a perfect bijection — every input maps to a unique output, and the inverse always exists.
+                      </p>
+                    </div>
+                    <div className="bg-white border border-indigo-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="bg-teal-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">Flip</span>
+                        <span className="text-xs font-bold text-slate-500 ml-1">mirror / complement</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Flip maps every value to its mirror image (<code className="bg-slate-100 px-1 rounded">S−1−v</code>). It is an <strong>involution</strong> — applying it twice gives the original. This is useful because it requires no extra key material to reverse, and it introduces a reflection symmetry that neither addition nor multiplication can produce. Without Flip, values near the middle of the alphabet would be statistically harder to move far from their start position in a single step.
+                      </p>
+                    </div>
+                    <div className="bg-white border border-indigo-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-bold text-slate-600">Together:</span>
+                        <span className="text-xs text-slate-500">complete coverage</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        These four types together form a <strong>complete set of reversible modular transformations</strong>: additive shift (Add/Subtract), multiplicative scaling (Multiply), and reflective complement (Flip). No other simple reversible single-character operation exists that these don't cover. Using all four means any statistical pattern in the input is attacked from multiple independent mathematical angles per round.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── ORDER AND DECISION PROCESS ── */}
+              <div className="border-2 border-slate-300 rounded-xl overflow-hidden mb-6">
+                <div className="bg-slate-800 px-5 py-3 flex items-center gap-3">
+                  <span className="text-white font-black text-base">🔀</span>
+                  <span className="text-white font-bold text-base">How the order and every step is decided — the full decision chain</span>
+                </div>
+                <div className="bg-white p-5 space-y-5">
+
+                  <p className="text-sm text-slate-600 leading-relaxed">
+                    There is <strong>no preset order</strong> for the 4 operation types. The sequence — which operations fire, in what order, with what amount — is entirely determined by the keystream bytes generated from the key and column IV. A different key, or a different column, produces a completely different sequence even for identical input values.
+                  </p>
+
+                  {/* Decision flowchart for a single sub-op */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4">Decision chain for one sub-operation (repeated 5× per character)</div>
+
+                    <div className="flex flex-col gap-0">
+                      {/* Step 1 */}
+                      <div className="flex gap-4 items-start">
+                        <div className="flex flex-col items-center shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-slate-700 text-white flex items-center justify-center font-black text-sm">1</div>
+                          <div className="w-0.5 h-6 bg-slate-300 mt-1" />
+                        </div>
+                        <div className="pt-1 pb-6">
+                          <div className="font-bold text-slate-700 text-sm mb-1">Consume the next keystream byte <code className="bg-slate-200 px-1.5 py-0.5 rounded font-mono text-xs">k</code></div>
+                          <p className="text-xs text-slate-500 leading-relaxed">
+                            The keystream is a deterministic sequence of numbers derived from the round key + column IV. For each character, 5 consecutive bytes are consumed — one per sub-op. This byte is the <em>only</em> source of randomness for this step.
+                          </p>
+                        </div>
+                      </div>
+                      {/* Step 2 */}
+                      <div className="flex gap-4 items-start">
+                        <div className="flex flex-col items-center shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center font-black text-sm">2</div>
+                          <div className="w-0.5 h-6 bg-slate-300 mt-1" />
+                        </div>
+                        <div className="pt-1 pb-6">
+                          <div className="font-bold text-slate-700 text-sm mb-1">Compute <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-xs">k mod 4</code> → operation type (0, 1, 2, or 3)</div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+                            {([
+                              { r: "= 0", name: "Add", c: "bg-amber-50 border-amber-300 text-amber-800" },
+                              { r: "= 1", name: "Subtract", c: "bg-red-50 border-red-300 text-red-700" },
+                              { r: "= 2", name: "Multiply", c: "bg-violet-50 border-violet-300 text-violet-700" },
+                              { r: "= 3", name: "Flip", c: "bg-teal-50 border-teal-300 text-teal-700" },
+                            ] as const).map(o => (
+                              <div key={o.r} className={`rounded-lg border px-3 py-2 text-xs ${o.c}`}>
+                                <div className="font-mono font-black">{o.r}</div>
+                                <div className="font-bold mt-0.5">{o.name}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-slate-400 mt-2">
+                            Because any integer mod 4 gives exactly one of {"{0,1,2,3}"}, each byte maps to exactly one operation. The four outcomes are roughly equally likely (each has probability ~¼ over all key values).
+                          </p>
+                        </div>
+                      </div>
+                      {/* Step 3 */}
+                      <div className="flex gap-4 items-start">
+                        <div className="flex flex-col items-center shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-black text-sm">3</div>
+                          <div className="w-0.5 h-6 bg-slate-300 mt-1" />
+                        </div>
+                        <div className="pt-1 pb-6">
+                          <div className="font-bold text-slate-700 text-sm mb-1">Compute <code className="bg-violet-100 px-1.5 py-0.5 rounded font-mono text-xs">⌊k / 4⌋</code> → raw upper bits → derive the amount or multiplier</div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+                              <div className="font-bold text-slate-600 mb-1">For Add / Subtract:</div>
+                              <div className="font-mono text-slate-700">amt = ⌊k/4⌋ mod (S−1) + 1</div>
+                              <div className="text-slate-400 mt-1">Always 1 to S−1. Never 0 (a shift of 0 does nothing) and never S (which wraps to 0).</div>
+                            </div>
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+                              <div className="font-bold text-slate-600 mb-1">For Multiply:</div>
+                              <div className="font-mono text-slate-700">idx = ⌊k/4⌋ mod len(coprimes)</div>
+                              <div className="text-slate-400 mt-1">Indexes into the precomputed coprime list for this alphabet. Guarantees a valid invertible multiplier.</div>
+                            </div>
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+                              <div className="font-bold text-slate-600 mb-1">For Flip:</div>
+                              <div className="font-mono text-slate-700">⌊k/4⌋ is ignored</div>
+                              <div className="text-slate-400 mt-1">Flip needs no amount — the mirror is always S−1−v regardless of the key byte's upper bits.</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Step 4 */}
+                      <div className="flex gap-4 items-start">
+                        <div className="flex flex-col items-center shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-black text-sm">4</div>
+                          <div className="w-0.5 h-6 bg-slate-300 mt-1" />
+                        </div>
+                        <div className="pt-1 pb-6">
+                          <div className="font-bold text-slate-700 text-sm mb-1">Apply the operation to the current position <code className="bg-emerald-100 px-1.5 py-0.5 rounded font-mono text-xs">v</code> → get new position <code className="bg-emerald-100 px-1.5 py-0.5 rounded font-mono text-xs">v'</code></div>
+                          <p className="text-xs text-slate-500 leading-relaxed">
+                            The result is always kept within bounds using <code className="bg-slate-100 px-1 rounded font-mono text-xs">mod S</code>, so the output is always a valid alphabet index. The position <code className="bg-slate-100 px-1 rounded font-mono text-xs">v'</code> becomes the input <code className="bg-slate-100 px-1 rounded font-mono text-xs">v</code> for the next sub-op.
+                          </p>
+                        </div>
+                      </div>
+                      {/* Step 5 */}
+                      <div className="flex gap-4 items-start">
+                        <div className="flex flex-col items-center shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black text-sm">5</div>
+                        </div>
+                        <div className="pt-1">
+                          <div className="font-bold text-slate-700 text-sm mb-1">After sub-op 5: convert final position back to a character</div>
+                          <p className="text-xs text-slate-500 leading-relaxed">
+                            The final <code className="bg-slate-100 px-1 rounded font-mono text-xs">v'</code> is offset back to the character's ASCII range (digits → +48, uppercase → +65, lowercase → +97) to produce the encrypted character. This is the output that appears in the anonymized value.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Why 5 sub-ops, not 1 or 10 */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                      <div className="font-bold text-slate-700 text-sm mb-2">Why 5 sub-ops per character?</div>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        5 gives a high probability that all 4 operation types appear at least once per character per round (probability ≈ 94%). Fewer sub-ops (e.g. 1 or 2) leave a large chance that only one type of operation fires, making the scrambling statistically detectable.
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                      <div className="font-bold text-slate-700 text-sm mb-2">Why is the order random, not fixed?</div>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        A fixed order (e.g. always Add → Subtract → Multiply → Flip → Add) would be a known pattern. An attacker who sees enough encrypted values could reverse-engineer the order and reduce the problem to guessing 4 amounts instead of 5 operation+amount pairs. Randomising the order via the keystream makes each position an independent unknown.
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                      <div className="font-bold text-slate-700 text-sm mb-2">Why does each sub-op get its own key byte?</div>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Reusing the same byte for multiple sub-ops would create correlation — the operation type and amount of sub-op 1 would perfectly predict those of sub-op 2. Using 5 independent bytes from the keystream means each sub-op's type and amount are independently random given the key.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Operation cards */}
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">The 4 operation types in detail</div>
               <div className="space-y-5 mb-6">
 
                 {/* Op 0: Add */}
@@ -1304,6 +1492,9 @@ export function GuideSection() {
                     <span className="ml-auto font-mono text-xs bg-amber-100 text-amber-700 border border-amber-300 px-2 py-0.5 rounded">k mod 4 = 0</span>
                   </div>
                   <div className="p-4 space-y-3">
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                      <strong>Why chosen:</strong> The simplest reversible shift. It covers the "move forward" direction and is the easiest to understand and verify. It also cancels perfectly with Subtract, making the net effect of a forward+backward pair indeterminate without knowing both key bytes.
+                    </div>
                     <p className="text-sm text-slate-600 leading-relaxed">
                       <strong>In plain English:</strong> Shift the character's alphabet position forward by <code className="bg-slate-100 px-1 rounded text-xs">amt</code> steps. Wrap around if you go past the end (like clock arithmetic — going past midnight loops back to 12).
                     </p>
@@ -1336,8 +1527,11 @@ export function GuideSection() {
                     <span className="ml-auto font-mono text-xs bg-red-100 text-red-700 border border-red-300 px-2 py-0.5 rounded">k mod 4 = 1</span>
                   </div>
                   <div className="p-4 space-y-3">
+                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-800">
+                      <strong>Why chosen:</strong> The mirror of Add. Including both directions means the sequence of operations can partially or fully cancel itself (e.g. +3 then −3 = net 0), which is unpredictable without knowing all 5 key bytes. It also ensures that the value can reach any position in the alphabet regardless of starting point.
+                    </div>
                     <p className="text-sm text-slate-600 leading-relaxed">
-                      <strong>In plain English:</strong> Shift the character's position backward by <code className="bg-slate-100 px-1 rounded text-xs">amt</code> steps. Wrap around from the beginning back to the end if needed. This is exactly the reverse of Add — decrypting just adds instead of subtracts.
+                      <strong>In plain English:</strong> Shift the character's position backward by <code className="bg-slate-100 px-1 rounded text-xs">amt</code> steps. Wrap around from the beginning back to the end if needed.
                     </p>
                     <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                       <span className="font-semibold text-slate-600">Example:</span> digit '2' (position 2) − amt 5 → 2 − 5 + 10 = 7 → character '7' (the +10 prevents going below 0)
@@ -1368,14 +1562,17 @@ export function GuideSection() {
                     <span className="ml-auto font-mono text-xs bg-violet-100 text-violet-700 border border-violet-300 px-2 py-0.5 rounded">k mod 4 = 2</span>
                   </div>
                   <div className="p-4 space-y-3">
+                    <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-violet-800">
+                      <strong>Why chosen:</strong> Multiplication is a qualitatively different transformation from addition — it stretches the alphabet non-uniformly. Without it, all five sub-ops would be additive shifts, and their combined effect could be reduced to a single net shift (the sum mod S). Multiply breaks this linearity entirely, making the combined effect impossible to collapse into a simpler form without knowing which sub-ops were multiplicative.
+                    </div>
                     <p className="text-sm text-slate-600 leading-relaxed">
-                      <strong>In plain English:</strong> Multiply the character's position by a special number (<code className="bg-slate-100 px-1 rounded text-xs">mul</code>) then wrap around. The key word is <em>coprime</em> — the multiplier shares no common factors with the alphabet size, which guarantees every position maps to a unique new position and can be perfectly undone.
+                      <strong>In plain English:</strong> Multiply the character's position by a special number (<code className="bg-slate-100 px-1 rounded text-xs">mul</code>) then wrap around. The multiplier is always <em>coprime</em> to the alphabet size — this guarantees every position maps to a unique new position and the operation is perfectly reversible.
                     </p>
                     <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                      <span className="font-semibold text-slate-600">Example:</span> digit '3' (position 3) × 7 = 21 → 21 mod 10 = 1 → character '1'. Decrypt: 1 × 3 (inverse of 7 mod 10) = 3 ✓
+                      <span className="font-semibold text-slate-600">Example:</span> digit '3' (position 3) × 7 = 21 → 21 mod 10 = 1 → '1'. Decrypt: 1 × 3 (the modular inverse of 7 mod 10) = 3 ✓
                     </div>
                     <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-violet-800">
-                      <strong>Coprime multipliers used:</strong> digits (S=10) → {'{'}3, 7, 9{'}'} &nbsp;|&nbsp; lowercase letters (S=26) → {'{'}3, 5, 7, 9, 11, 15, …{'}'} &nbsp;|&nbsp; uppercase letters (S=26) → same set
+                      <strong>Coprime multipliers used:</strong> digits (S=10) → {'{'}3, 7, 9{'}'} &nbsp;|&nbsp; letters (S=26) → {'{'}3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25{'}'}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
@@ -1389,7 +1586,7 @@ export function GuideSection() {
                       </div>
                       <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                         <div className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">📐 Multiplier</div>
-                        <div className="font-mono text-xs text-slate-700">chosen from coprime list</div>
+                        <div className="font-mono text-xs text-slate-700">indexed from coprime list</div>
                         <div className="text-[10px] text-slate-400 mt-1">Unique inverse always exists</div>
                       </div>
                     </div>
@@ -1404,16 +1601,19 @@ export function GuideSection() {
                     <span className="ml-auto font-mono text-xs bg-teal-100 text-teal-700 border border-teal-300 px-2 py-0.5 rounded">k mod 4 = 3</span>
                   </div>
                   <div className="p-4 space-y-3">
+                    <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 text-xs text-teal-800">
+                      <strong>Why chosen:</strong> Flip introduces a reflection that neither addition nor multiplication can replicate. It is self-inverse (no extra key material needed to reverse it), and it is the only operation that maps the midpoint of the alphabet to itself — a fixed point — while moving all other values. This property means it interacts with the other operations in a genuinely non-linear way. It also saturates all 4 possible values of <code className="bg-teal-100 px-1 rounded font-mono">k mod 4</code>, so each byte of the keystream maps to an assigned role with no gaps.
+                    </div>
                     <p className="text-sm text-slate-600 leading-relaxed">
-                      <strong>In plain English:</strong> Mirror the character to the opposite end of the alphabet. '0' swaps with '9', 'a' swaps with 'z', 'A' swaps with 'Z'. This is its own inverse — doing it twice returns the original, so <em>no amount is needed</em>.
+                      <strong>In plain English:</strong> Mirror the character to the opposite end of the alphabet — '0' swaps with '9', 'a' swaps with 'z', 'A' swaps with 'Z'. Applying it twice always returns the original, so no key material is needed to decrypt.
                     </p>
                     <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                      <span className="font-semibold text-slate-600">Digit examples:</span> '0'↔'9' &nbsp; '1'↔'8' &nbsp; '2'↔'7' &nbsp; '3'↔'6' &nbsp; '4'↔'5'
+                      <span className="font-semibold text-slate-600">All digit swaps:</span> '0'↔'9' &nbsp; '1'↔'8' &nbsp; '2'↔'7' &nbsp; '3'↔'6' &nbsp; '4'↔'5'
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
                         <div className="text-[10px] font-bold text-emerald-600 uppercase mb-1.5">🔒 Encrypt</div>
-                        <div className="font-mono text-sm text-emerald-800 font-bold">v' = (S − 1 − v)</div>
+                        <div className="font-mono text-sm text-emerald-800 font-bold">v' = S − 1 − v</div>
                       </div>
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                         <div className="text-[10px] font-bold text-blue-600 uppercase mb-1.5">🔓 Decrypt</div>
