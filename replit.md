@@ -4,7 +4,8 @@ A CSV/fixed-width data profiler and privacy risk assessment tool — upload layo
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- Main workflow: `artifacts/csv-profiler: web` — starts both Vite frontend and the Express API server (port 3001)
+- `pnpm --filter @workspace/api-server run dev` — run the API server standalone
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -38,7 +39,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Replit's workflow runner injects a dynamic `PORT` env var. The frontend dev script must NOT override `PORT` for Vite (Vite should use the injected value), but the API server's dev script hardcodes `PORT=3001` so both services don't race for the same port. The Vite proxy config forwards `/api` → `localhost:3001`.
+- After `pnpm install`, always run `pnpm --filter @workspace/db run push` before starting the app if the schema may have changed.
 
 ## Pointers
 
