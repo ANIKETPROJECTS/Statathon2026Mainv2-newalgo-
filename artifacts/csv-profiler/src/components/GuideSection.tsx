@@ -282,9 +282,15 @@ function exportTracePDF(trace: Trace, seeds: number[], colName: string, cellValu
 
   function charTable(shifts: CharShift[], stageLabel: string, outputLabel: string, phase: "enc" | "dec"): string {
     const rows = shifts.map((s, i) => {
-      const spinAmt = s.changed
-        ? (s.from.match(/[a-zA-Z]/) ? `+${s.k % 25}` : `+${s.k % 9}`)
-        : "—";
+      const netShift = s.changed && s.microOps.length > 0
+        ? (() => {
+            const vB = s.microOps[0].vBefore;
+            const vA = s.microOps[s.microOps.length - 1].vAfter;
+            const S  = s.microOps[0].size;
+            return ((vA - vB) % S + S) % S;
+          })()
+        : null;
+      const spinAmt = netShift !== null ? `+${netShift} (net, 5 micro-ops)` : "—";
       const bg = i % 2 === 0 ? "#fff" : "#f8f9fa";
       const resultColor = phase === "enc" ? "#16a34a" : "#2563eb";
       return `<tr style="background:${bg}">
@@ -309,7 +315,7 @@ function exportTracePDF(trace: Trace, seeds: number[], colName: string, cellValu
       <table>
         <thead><tr>
           <th>#</th><th>Input char</th><th>Type</th><th>Key byte (k)</th>
-          <th>Spin amount</th><th>Output char</th><th>Action</th>
+          <th>Net shift (5 micro-ops)</th><th>Output char</th><th>Action</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
@@ -2176,10 +2182,9 @@ export function GuideSection() {
                   const bgs = ["bg-blue-50 border-blue-200","bg-sky-50 border-sky-200","bg-teal-50 border-teal-200","bg-emerald-50 border-emerald-200"];
                   const textCols = ["text-blue-700","text-sky-700","text-teal-700","text-emerald-700"];
                   const ks = trace.ksFirstBytes[ri].slice(0,4);
-                  const shifts = trace.encShifts[ri].slice(0,4).map(s => {
-                    if (!s.changed) return "—";
-                    return s.from.match(/[a-zA-Z]/) ? `+${1 + s.k % 25}` : `+${1 + s.k % 9}`;
-                  });
+                  const charResults = trace.encShifts[ri].slice(0,4).map(s =>
+                    s.changed ? `${s.from}→${s.to}` : s.from
+                  );
                   return (
                     <div key={ri} className={`border ${bgs[ri].split(" ")[1]} rounded-xl p-3`}>
                       <div className="flex items-center gap-2">
@@ -2190,7 +2195,7 @@ export function GuideSection() {
                         <ArrowRight className="w-4 h-4 text-slate-400 shrink-0"/>
                         <div className={`${bgs[ri].split(" ")[0]} border ${bgs[ri].split(" ")[1]} rounded-lg px-3 py-2 flex-1`}>
                           <div className={`font-bold text-[10px] ${textCols[ri]} mb-1`}>Round {ri+1} — Key {ri+1} + xorshift128+</div>
-                          <div className="text-[9px] text-slate-500">Keystream: {ks.join(", ")} → shifts: {shifts.join(", ")}</div>
+                          <div className="text-[9px] text-slate-500">Keystream (first 4): {ks.join(", ")} · first 4 chars: {charResults.join(", ")}</div>
                         </div>
                         <ArrowRight className="w-4 h-4 text-slate-400 shrink-0"/>
                         <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-center shrink-0 w-[90px]">
@@ -2337,7 +2342,7 @@ export function GuideSection() {
                     name: "No identity leakage",
                     icon: "👤",
                     badge: "bg-slate-100 text-slate-700",
-                    body: "Every character is shifted by at least 1 in each round (minimum shift formula: 1 + k mod size ≥ 1). So no character can remain the same across any single round.",
+                    body: "The actual encryption runtime guarantees each character shifts by at least 1 per round (a mandatory +1 offset in the core shift formula ensures the net displacement is never 0). The interactive simulation on this page uses a richer 5-micro-op model for illustration; individual ops can cancel, but the runtime guarantee still holds for the real anonymisation.",
                     check: true
                   },
                 ].map(p => (
