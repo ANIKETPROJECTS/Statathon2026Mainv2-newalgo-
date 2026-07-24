@@ -38,28 +38,121 @@ function makeCellKsBytes(size: number, keyHex: string, ivSeed: number): Uint8Arr
   return Uint8Array.from({ length: size }, () => Math.floor(ksRng() * 256));
 }
 
-function fpeEncryptChar(ch: string, k: number, idx: number, isAllNumeric: boolean): string {
-  const code = ch.charCodeAt(0);
-  if (code >= 48 && code <= 57) {
-    if (isAllNumeric && idx === 0) return String.fromCharCode(49 + ((code - 49 + 1 + (k % 8) + 81) % 9));
-    return String.fromCharCode(48 + ((code - 48 + 1 + (k % 9)) % 10));
+// ── Multi-operation helpers ───────────────────────────────────────────────────
+
+function gcd(a: number, b: number): number { return b === 0 ? a : gcd(b, a % b); }
+
+function modInverse(a: number, m: number): number {
+  let [r0, r1, s0, s1] = [a, m, 1, 0];
+  while (r1 !== 0) {
+    const q = Math.floor(r0 / r1);
+    [r0, r1] = [r1, r0 - q * r1];
+    [s0, s1] = [s1, s0 - q * s1];
   }
-  if (code >= 65 && code <= 90) return String.fromCharCode(65 + ((code - 65 + 1 + (k % 25)) % 26));
-  if (code >= 97 && code <= 122) return String.fromCharCode(97 + ((code - 97 + 1 + (k % 25)) % 26));
-  return ch;
+  return ((s0 % m) + m) % m;
 }
 
-function fpeDecryptChar(ch: string, k: number, idx: number, isAllNumeric: boolean): string {
-  const code = ch.charCodeAt(0);
-  if (code >= 48 && code <= 57) {
-    if (isAllNumeric && idx === 0) return String.fromCharCode(49 + ((code - 49 - 1 - (k % 8) + 81) % 9));
-    return String.fromCharCode(48 + ((code - 48 - 1 - (k % 9) + 100) % 10));
-  }
-  if (code >= 65 && code <= 90) return String.fromCharCode(65 + ((code - 65 - 1 - (k % 25) + 2600) % 26));
-  if (code >= 97 && code <= 122) return String.fromCharCode(97 + ((code - 97 - 1 - (k % 25) + 2600) % 26));
-  return ch;
+// Precomputed coprime multipliers per alphabet size (excluding 1)
+const COPRIME_MULS: Record<number, number[]> = {
+  9:  [2, 4, 5, 7, 8],
+  10: [3, 7, 9],
+  26: [3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25],
+};
+function getMuls(size: number): number[] {
+  if (COPRIME_MULS[size]) return COPRIME_MULS[size];
+  const res: number[] = [];
+  for (let m = 2; m < size; m++) if (gcd(m, size) === 1) res.push(m);
+  return res;
 }
 
+// opType: 0=add, 1=subtract, 2=multiply(coprime), 3=flip(complement)
+interface MicroOp {
+  opType: 0 | 1 | 2 | 3;
+  k: number;       // keystream byte that drives this sub-op
+  amount: number;  // add/sub: shift amount; mul: multiplier; flip: unused (0)
+  vBefore: number; // alphabet offset (0-indexed) before this op
+  vAfter: number;  // alphabet offset (0-indexed) after this op
+  size: number;    // alphabet size
+}
+
+// Apply one MicroOp forward
+function applyOp(v: number, k: number, size: number, muls: number[]): MicroOp {
+  const opType = (k % 4) as 0|1|2|3;
+  const vBefore = v;
+  let amount: number, vAfter: number;
+  if (opType === 0) {
+    amount = Math.floor(k / 4) % (size - 1) + 1;
+    vAfter = (v + amount) % size;
+  } else if (opType === 1) {
+    amount = Math.floor(k / 4) % (size - 1) + 1;
+    vAfter = ((v - amount) % size + size) % size;
+  } else if (opType === 2) {
+    const mulIdx = Math.floor(k / 4) % muls.length;
+    amount = muls[mulIdx];
+    vAfter = (v * amount) % size;
+  } else {
+    amount = 0;
+    vAfter = (size - 1 - v + size) % size;
+  }
+  return { opType, k, amount, vBefore, vAfter, size };
+}
+
+// 5 micro-operations per character — encrypt
+function fpeEncryptChar5(ch: string, ks5: number[], idx: number, isAllNumeric: boolean): { out: string; microOps: MicroOp[] } {
+  const code = ch.charCodeAt(0);
+  let base: number, size: number;
+  if (isAllNumeric && idx === 0 && code >= 49 && code <= 57) { base = 49; size = 9; }
+  else if (code >= 48 && code <= 57)  { base = 48; size = 10; }
+  else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
+  else if (code >= 97 && code <= 122) { base = 97; size = 26; }
+  else return { out: ch, microOps: [] };
+  const muls = getMuls(size);
+  let v = code - base;
+  const microOps: MicroOp[] = [];
+  for (let i = 0; i < 5; i++) {
+    const op = applyOp(v, ks5[i], size, muls);
+    microOps.push(op);
+    v = op.vAfter;
+  }
+  return { out: String.fromCharCode(v + base), microOps };
+}
+
+// 5 micro-operations per character — decrypt (reverses forward ops in reverse order)
+function fpeDecryptChar5(ch: string, ks5: number[], idx: number, isAllNumeric: boolean): { out: string; microOps: MicroOp[] } {
+  const code = ch.charCodeAt(0);
+  let base: number, size: number;
+  if (isAllNumeric && idx === 0 && code >= 49 && code <= 57) { base = 49; size = 9; }
+  else if (code >= 48 && code <= 57)  { base = 48; size = 10; }
+  else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
+  else if (code >= 97 && code <= 122) { base = 97; size = 26; }
+  else return { out: ch, microOps: [] };
+  const muls = getMuls(size);
+  // Reconstruct forward op parameters (amount & type) from ks5 — independent of v
+  const fwdParams = ks5.map(k => {
+    const opType = (k % 4) as 0|1|2|3;
+    let amount: number;
+    if (opType === 0 || opType === 1) amount = Math.floor(k / 4) % (size - 1) + 1;
+    else if (opType === 2) amount = muls[Math.floor(k / 4) % muls.length];
+    else amount = 0;
+    return { opType, amount };
+  });
+  let v = code - base;
+  const microOps: MicroOp[] = [];
+  for (let i = 4; i >= 0; i--) {
+    const { opType, amount } = fwdParams[i];
+    const vBefore = v;
+    let vAfter: number;
+    if (opType === 0) vAfter = ((v - amount) % size + size) % size;
+    else if (opType === 1) vAfter = (v + amount) % size;
+    else if (opType === 2) vAfter = (v * modInverse(amount, size)) % size;
+    else vAfter = (size - 1 - v + size) % size;
+    microOps.push({ opType, k: ks5[i], amount, vBefore, vAfter, size });
+    v = vAfter;
+  }
+  return { out: String.fromCharCode(v + base), microOps };
+}
+
+// Updated runRound: consumes 5 keystream bytes per character
 function runRound(value: string, ks: Uint8Array, mode: "enc" | "dec"): { output: string; charShifts: CharShift[] } {
   const isAllNumeric = /^\d+$/.test(value) && value.length > 1;
   const chars = [...value];
@@ -68,15 +161,21 @@ function runRound(value: string, ks: Uint8Array, mode: "enc" | "dec"): { output:
   let output = "";
   for (let idx = 0; idx < chars.length; idx++) {
     const ch = chars[idx];
-    const k = ks[ki++ % ks.length];
-    const result = mode === "enc" ? fpeEncryptChar(ch, k, idx, isAllNumeric) : fpeDecryptChar(ch, k, idx, isAllNumeric);
-    output += result;
-    charShifts.push({ from: ch, to: result, k, changed: ch !== result });
+    const ks5 = Array.from({ length: 5 }, () => ks[ki++ % ks.length]);
+    if (mode === "enc") {
+      const { out, microOps } = fpeEncryptChar5(ch, ks5, idx, isAllNumeric);
+      charShifts.push({ from: ch, to: out, k: ks5[0], changed: ch !== out, microOps });
+      output += out;
+    } else {
+      const { out, microOps } = fpeDecryptChar5(ch, ks5, idx, isAllNumeric);
+      charShifts.push({ from: ch, to: out, k: ks5[0], changed: ch !== out, microOps });
+      output += out;
+    }
   }
   return { output, charShifts };
 }
 
-interface CharShift { from: string; to: string; k: number; changed: boolean; }
+interface CharShift { from: string; to: string; k: number; changed: boolean; microOps: MicroOp[]; }
 
 interface KeyDerivStep {
   seedIdx: number;
@@ -134,7 +233,8 @@ function computeTrace(seeds: number[], colName: string, rawValue: string): Trace
   });
 
   const colIVs = keys.map(k => hashColIV(k, colName));
-  const ksArr = keys.map((k, i) => makeCellKsBytes(value.length + 32, k, colIVs[i]));
+  // 5 keystream bytes consumed per character, so request 5× the length
+  const ksArr = keys.map((k, i) => makeCellKsBytes(value.length * 5 + 64, k, colIVs[i]));
 
   const encStages: string[] = [value];
   const encShifts: CharShift[][] = [];
@@ -480,31 +580,45 @@ function SeedBox({ label, value, onChange }: { label: string; value: number; onC
 }
 
 // Small character shift bubble
-function getCharType(code: number, isLeadDigit: boolean): { type: string; modSize: number; base: number; size: number } | null {
-  if (code >= 65 && code <= 90) return { type: "Uppercase", modSize: 25, base: 65, size: 26 };
-  if (code >= 97 && code <= 122) return { type: "Lowercase", modSize: 25, base: 97, size: 26 };
-  if (isLeadDigit)               return { type: "Lead digit", modSize: 8, base: 49, size: 9 };
-  if (code >= 48 && code <= 57)  return { type: "Digit", modSize: 9, base: 48, size: 10 };
+function getCharType(code: number, isLeadDigit: boolean): { type: string; base: number; size: number } | null {
+  if (code >= 65 && code <= 90) return { type: "Uppercase", base: 65, size: 26 };
+  if (code >= 97 && code <= 122) return { type: "Lowercase", base: 97, size: 26 };
+  if (isLeadDigit)               return { type: "Lead digit", base: 49, size: 9 };
+  if (code >= 48 && code <= 57)  return { type: "Digit", base: 48, size: 10 };
   return null;
 }
 
-function ShiftBubble({ shift, isLeadDigit }: { shift: CharShift; isLeadDigit?: boolean }) {
-  if (!shift.changed) {
+// Op badge styling per operation type
+const OP_BADGE: Record<number, { label: (n: number) => string; cls: string }> = {
+  0: { label: n => `+${n}`,   cls: "bg-amber-100 text-amber-800 border-amber-300" },
+  1: { label: n => `−${n}`,   cls: "bg-red-100 text-red-700 border-red-300" },
+  2: { label: n => `×${n}`,   cls: "bg-violet-100 text-violet-700 border-violet-300" },
+  3: { label: _n => `flip`,   cls: "bg-teal-100 text-teal-700 border-teal-300" },
+};
+
+function ShiftBubble({ shift }: { shift: CharShift; isLeadDigit?: boolean }) {
+  if (!shift.changed || shift.microOps.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-1 px-3">
+      <div className="flex flex-col items-center gap-1 px-2">
         <span className="text-2xl font-mono font-bold text-slate-400">{shift.from}</span>
-        <span className="text-xs text-slate-300">—</span>
+        <span className="text-[9px] text-slate-300">—</span>
         <span className="text-2xl font-mono font-bold text-slate-400">{shift.to}</span>
       </div>
     );
   }
-  const code = shift.from.charCodeAt(0);
-  const info = getCharType(code, !!isLeadDigit);
-  const shiftAmt = info ? 1 + (shift.k % info.modSize) : 0;
   return (
-    <div className="flex flex-col items-center gap-1 px-3">
+    <div className="flex flex-col items-center gap-1 px-2">
       <span className="text-2xl font-mono font-bold text-blue-600">{shift.from}</span>
-      <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 rounded-full px-1.5 py-0.5">+{shiftAmt}</span>
+      <div className="flex gap-0.5 flex-wrap justify-center">
+        {shift.microOps.map((op, i) => {
+          const def = OP_BADGE[op.opType];
+          return (
+            <span key={i} className={`text-[8px] font-bold border rounded px-1 py-px leading-tight ${def.cls}`}>
+              {def.label(op.amount)}
+            </span>
+          );
+        })}
+      </div>
       <span className="text-2xl font-mono font-bold text-green-600">{shift.to}</span>
     </div>
   );
@@ -1141,43 +1255,53 @@ export function GuideSection() {
                       <span key={i} className="font-mono text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-lg font-bold border border-amber-200">{b}</span>
                     ))}
                   </div>
-                  <p className="text-xs text-slate-400 mt-2">Each byte is a number 0–255. One byte controls one character's shift.</p>
+                  <p className="text-xs text-slate-400 mt-2"><strong>5 consecutive bytes consumed per character</strong> — each drives one sub-operation (add, subtract, multiply, or flip).</p>
                 </div>
               </div>
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-800">
-                <strong>Why are keystream bytes never 0?</strong> A byte of 0 would apply a shift of <span className="font-mono">1 + (0 mod 9) = 1</span> to digits or <span className="font-mono">1 + (0 mod 25) = 1</span> to letters — so they still shift. The minimum shift is always at least 1, so <strong>no character ever stays the same in a single round</strong>. This prevents a known-plaintext attacker from confirming unchanged characters.
+                <strong>Why 5 bytes per character?</strong> Each character goes through <strong>5 sequential sub-operations</strong> per round: add, subtract, multiply (by a number coprime to the alphabet size), or complement/flip. Using 5 independent keystream bytes means an attacker cannot predict the operation sequence from any single byte. The character’s alphabet index bounces through 5 distinct mathematical transformations before producing the final output.
               </div>
             </BigCard>
 
-            {/* Substep C: Shift formulas */}
+            {/* Substep C: Multi-op formulas */}
             <BigCard color="bg-white border-amber-200">
-              <h3 className="text-lg font-bold text-slate-800 mb-2">🟡 Sub-step C: The Exact Shift Formulas</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-2">🟡 Sub-step C: The 4 Operation Types</h3>
               <p className="text-slate-500 text-sm leading-relaxed mb-5">
-                Each character type is shifted within its own alphabet. The formula <span className="font-mono bg-slate-100 px-1 rounded">1 + (k mod size)</span> ensures the shift is always between 1 and the alphabet size. We add a large constant before modulo to avoid negative numbers when decrypting.
+                Each character passes through <strong>5 sequential sub-operations</strong> every round. The operation type for sub-op <em>i</em> is chosen by <span className="font-mono bg-slate-100 px-1 rounded">kᵢ mod 4</span>; the amount comes from the remaining bits. All 4 operations are <strong>fully reversible</strong> inside the character’s alphabet so decryption is exact.
               </p>
-              <div className="space-y-3">
-                {[
-                  { name: "Digit (0–9)", badge: "bg-blue-100 text-blue-700", size: 10, formula: "new = 48 + ((code − 48 + 1 + k mod 9) mod 10)", example: `'${encShifts.find(s => s.from.match(/[0-9]/))?.from ?? "3"}' + shift → '${encShifts.find(s => s.from.match(/[0-9]/))?.to ?? "7"}'`, why: "ASCII digits are 48–57. Subtracting 48 gives 0–9, we shift, then add 48 back. Mod 10 wraps around so '9'+2 = '1' not '11'." },
-                  { name: "Leading digit (1–9)", badge: "bg-indigo-100 text-indigo-700", size: 9, formula: "new = 49 + ((code − 49 + 1 + k mod 8) mod 9)", example: "Avoids turning '1' into '0' (leading zero)", why: "For all-numeric strings, the first digit uses mod 9 over the range 1–9, preventing a leading zero which would break the number's length semantics." },
-                  { name: "Uppercase letter (A–Z)", badge: "bg-violet-100 text-violet-700", size: 26, formula: "new = 65 + ((code − 65 + 1 + k mod 25) mod 26)", example: `'${encShifts.find(s => s.from.match(/[A-Z]/))?.from ?? "A"}' + shift → '${encShifts.find(s => s.from.match(/[A-Z]/))?.to ?? "C"}'`, why: "ASCII uppercase is 65–90. We shift within 0–25 and add 65 back. 'Z'+1 wraps to 'A'." },
-                  { name: "Lowercase letter (a–z)", badge: "bg-emerald-100 text-emerald-700", size: 26, formula: "new = 97 + ((code − 97 + 1 + k mod 25) mod 26)", example: `'${encShifts.find(s => s.from.match(/[a-z]/))?.from ?? "a"}' + shift → '${encShifts.find(s => s.from.match(/[a-z]/))?.to ?? "c"}'`, why: "Same as uppercase but base is 97 (ASCII 'a'). 'z'+1 wraps to 'a'." },
-                  { name: "Symbol / space / other", badge: "bg-slate-100 text-slate-600", size: 0, formula: "new = code (unchanged)", example: "' ' stays ' ', '.' stays '.'", why: "Symbols are part of the format, not the value. Changing them would corrupt the CSV structure." },
-                ].map(f => (
-                  <div key={f.name} className="rounded-xl border border-slate-200 p-4 grid grid-cols-[1fr_2fr_1fr] gap-4 items-start">
-                    <div>
-                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${f.badge}`}>{f.name}</span>
-                      <div className="text-xs text-slate-400 mt-2 font-mono">{f.example}</div>
+              <div className="space-y-3 mb-5">
+                {([
+                  { opType: 0, name: "Add", badge: "bg-amber-100 text-amber-800 border-amber-300", condition: "k mod 4 = 0", fwd: "v’ = (v + amt) mod S", rev: "v = (v’ − amt + S) mod S", where: "amt = ⌊k/4⌋ mod (S−1) + 1  —  always 1..(S−1)" },
+                  { opType: 1, name: "Subtract", badge: "bg-red-100 text-red-700 border-red-300", condition: "k mod 4 = 1", fwd: "v’ = (v − amt + S×100) mod S", rev: "v = (v’ + amt) mod S", where: "amt = ⌊k/4⌋ mod (S−1) + 1  —  always 1..(S−1)" },
+                  { opType: 2, name: "Multiply (coprime)", badge: "bg-violet-100 text-violet-700 border-violet-300", condition: "k mod 4 = 2", fwd: "v’ = (v × mul) mod S", rev: "v = (v’ × mul⁻¹) mod S  —  modular inverse", where: "mul from coprime list: digits→{3,7,9}, letters→{3,5,7,9,11,…}. Each mul is coprime to S so the inverse always exists." },
+                  { opType: 3, name: "Flip / Complement", badge: "bg-teal-100 text-teal-700 border-teal-300", condition: "k mod 4 = 3", fwd: "v’ = (S − 1 − v) mod S", rev: "Same operation (involutory)", where: "Maps ‘0’↔’9’, ‘a’↔‘z’, ‘A’↔‘Z’. Applying twice gives the original." },
+                ] as const).map(f => (
+                  <div key={f.opType} className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className={`text-xs font-bold px-2 py-1 rounded-full border ${f.badge}`}>Type {f.opType}: {f.name}</span>
+                      <span className="text-xs text-slate-400 font-mono">{f.condition}</span>
                     </div>
-                    <div>
-                      <div className="text-xs font-semibold text-slate-500 mb-1">Formula:</div>
-                      <div className="font-mono text-xs bg-slate-50 border border-slate-200 text-emerald-700 rounded-lg px-3 py-2">{f.formula}</div>
+                    <div className="grid grid-cols-[2fr_2fr_3fr] gap-3 text-xs">
+                      <div>
+                        <div className="text-slate-400 font-semibold mb-1">Encrypt:</div>
+                        <div className="font-mono bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-emerald-700">{f.fwd}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-400 font-semibold mb-1">Decrypt (reverse):</div>
+                        <div className="font-mono bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-slate-600">{f.rev}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-400 font-semibold mb-1">Amount / multiplier:</div>
+                        <div className="text-slate-500 leading-relaxed">{f.where}</div>
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-500 leading-relaxed">{f.why}</div>
                   </div>
                 ))}
               </div>
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 text-xs text-slate-600">
+                <strong>Symbol / space / other:</strong> All 5 sub-ops are skipped; the character passes through unchanged to preserve the CSV format.
+              </div>
             </BigCard>
-
             {/* Round selector + visualization */}
             <div className="rounded-2xl bg-slate-50 border-2 border-slate-200 p-6">
               <h3 className="font-bold text-slate-700 mb-4">🔄 Explore Each Encryption Round</h3>
@@ -1208,87 +1332,96 @@ export function GuideSection() {
                 const isAllNum = /^\d+$/.test(roundInput) && roundInput.length > 1;
                 return (
                   <>
-                    <div className="flex flex-wrap gap-3 justify-center mb-4">
-                      {encShifts.slice(0,14).map((s, i) => <ShiftBubble key={i} shift={s} isLeadDigit={isAllNum && i === 0} />)}
-                      {encShifts.length > 14 && <div className="flex items-center text-slate-400 text-sm italic">+{encShifts.length - 14} more…</div>}
+                    <div className="flex flex-wrap gap-2 justify-center mb-4">
+                      {encShifts.slice(0, 12).map((s, i) => <ShiftBubble key={i} shift={s} isLeadDigit={isAllNum && i === 0} />)}
+                      {encShifts.length > 12 && <div className="flex items-center text-slate-400 text-sm italic">+{encShifts.length - 12} more…</div>}
                     </div>
-                    <div className="flex items-center gap-6 text-xs flex-wrap justify-center mb-5">
-                      <span><span className="font-mono font-bold text-blue-600">X</span> = input char</span>
-                      <span><span className="text-amber-600 font-semibold bg-amber-50 px-1 rounded">+N</span> = shift from keystream byte</span>
-                      <span><span className="font-mono font-bold text-green-600">Y</span> = output char</span>
-                      <span><span className="font-mono font-bold text-slate-400">—</span> = symbol, unchanged</span>
+                    {/* Legend */}
+                    <div className="flex items-center gap-4 text-xs flex-wrap justify-center mb-5">
+                      <span><span className="font-mono font-bold text-blue-600">X</span> = input</span>
+                      <span className="flex items-center gap-1"><span className="text-[9px] font-bold border rounded px-1 py-px bg-amber-100 text-amber-800 border-amber-300">+N</span> add</span>
+                      <span className="flex items-center gap-1"><span className="text-[9px] font-bold border rounded px-1 py-px bg-red-100 text-red-700 border-red-300">−N</span> subtract</span>
+                      <span className="flex items-center gap-1"><span className="text-[9px] font-bold border rounded px-1 py-px bg-violet-100 text-violet-700 border-violet-300">×N</span> multiply</span>
+                      <span className="flex items-center gap-1"><span className="text-[9px] font-bold border rounded px-1 py-px bg-teal-100 text-teal-700 border-teal-300">flip</span> complement</span>
+                      <span><span className="font-mono font-bold text-green-600">Y</span> = output</span>
+                      <span><span className="font-mono font-bold text-slate-400">—</span> symbol</span>
                     </div>
 
-                    {/* Per-character shift derivation table */}
+                    {/* Per-character 5-op derivation table */}
                     <div className="rounded-xl border border-slate-200 overflow-hidden">
                       <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">🔢 Exact shift derivation — Round {encRoundIdx+1}</span>
-                        <span className="text-[10px] text-slate-400">shows how each +N is calculated from keystream byte k</span>
+                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">🔢 5-Operation derivation — Round {encRoundIdx+1}</span>
+                        <span className="text-[10px] text-slate-400">each character applies 5 sub-ops using 5 independent keystream bytes</span>
                       </div>
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                           <thead>
-                            <tr className="border-b border-slate-100 bg-slate-50/50">
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold w-12">In</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">Type</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">k (byte)</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">k mod N</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">Shift</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">ASCII arithmetic</th>
+                            <tr className="border-b border-slate-200 bg-slate-50/80">
+                              <th className="px-3 py-2 text-left text-slate-500 font-semibold w-20">Char</th>
+                              <th className="px-3 py-2 text-left text-slate-500 font-semibold w-24">Sub-op</th>
+                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">k byte</th>
+                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">Operation</th>
+                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">Amount</th>
+                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">v before→after</th>
+                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">Math</th>
                               <th className="px-3 py-2 text-left text-slate-500 font-semibold w-12">Out</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-50">
-                            {encShifts.slice(0, 12).map((s, i) => {
-                              const code = s.from.charCodeAt(0);
-                              const isLead = isAllNum && i === 0;
-                              const info = getCharType(code, isLead);
-                              if (!s.changed || !info) {
+                          <tbody>
+                            {encShifts.slice(0, 6).flatMap((s, ci) => {
+                              const OP_NAMES = ["add", "subtract", "multiply", "flip"];
+                              const OP_COLORS = [
+                                "text-amber-800 bg-amber-50 border-amber-200",
+                                "text-red-700 bg-red-50 border-red-200",
+                                "text-violet-700 bg-violet-50 border-violet-200",
+                                "text-teal-700 bg-teal-50 border-teal-200",
+                              ];
+                              if (!s.changed || s.microOps.length === 0) {
+                                return [
+                                  <tr key={`s-${ci}`} className="border-b border-slate-100 bg-slate-50/40">
+                                    <td colSpan={8} className="px-3 py-2 text-slate-400 font-mono">
+                                      <span className="font-bold text-slate-500">{s.from}</span>
+                                      <span className="ml-2 text-slate-300">— symbol, all 5 sub-ops skipped, character unchanged</span>
+                                    </td>
+                                  </tr>
+                                ];
+                              }
+                              return s.microOps.map((op, mi) => {
+                                const isFirst = mi === 0;
+                                const isLast = mi === 4;
+                                const opLabel = op.opType === 0 ? `+${op.amount}` : op.opType === 1 ? `−${op.amount}` : op.opType === 2 ? `×${op.amount}` : "flip";
+                                const math = op.opType === 0
+                                  ? `(${op.vBefore}+${op.amount}) mod ${op.size}=${op.vAfter}`
+                                  : op.opType === 1
+                                  ? `(${op.vBefore}−${op.amount}+${op.size}) mod ${op.size}=${op.vAfter}`
+                                  : op.opType === 2
+                                  ? `(${op.vBefore}×${op.amount}) mod ${op.size}=${op.vAfter}`
+                                  : `${op.size-1}−${op.vBefore}=${op.vAfter}`;
+                                const finalNote = isLast ? ` → chr(${op.vAfter}+${op.size === 9 ? 49 : op.size === 10 ? 48 : s.to.charCodeAt(0) < 97 ? 65 : 97})='${s.to}'` : "";
                                 return (
-                                  <tr key={i} className="text-slate-400">
-                                    <td className="px-3 py-2 font-mono font-bold text-sm">{s.from}</td>
-                                    <td className="px-3 py-2">Symbol</td>
-                                    <td className="px-3 py-2 font-mono">{s.k}</td>
-                                    <td className="px-3 py-2 italic">—</td>
-                                    <td className="px-3 py-2 italic">—</td>
-                                    <td className="px-3 py-2 italic">unchanged (symbols stay as-is)</td>
-                                    <td className="px-3 py-2 font-mono font-bold text-sm">{s.to}</td>
+                                  <tr key={`${ci}-${mi}`} className={mi % 2 === 0 ? "bg-white border-b border-slate-50" : "bg-slate-50/50 border-b border-slate-50"}>
+                                    <td className="px-3 py-1.5 font-mono font-bold text-sm">
+                                      {isFirst ? <><span className="text-blue-600">{s.from}</span><span className="text-slate-300 mx-1">→</span><span className="text-green-600">{s.to}</span></> : <span className="text-slate-200">""</span>}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-slate-400 pl-5">op {mi+1}</td>
+                                    <td className="px-3 py-1.5">
+                                      <span className="font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5">{op.k}</span>
+                                    </td>
+                                    <td className="px-3 py-1.5">
+                                      <span className={`font-bold border rounded px-1.5 py-0.5 ${OP_COLORS[op.opType]}`}>{OP_NAMES[op.opType]}</span>
+                                    </td>
+                                    <td className="px-3 py-1.5 font-mono font-bold text-slate-700">{op.opType === 3 ? "—" : op.amount}</td>
+                                    <td className="px-3 py-1.5 font-mono"><span className="text-slate-500">{op.vBefore}</span><span className="text-slate-300 mx-1">→</span><span className="font-bold text-indigo-600">{op.vAfter}</span></td>
+                                    <td className="px-3 py-1.5 font-mono text-slate-500">{math}{finalNote}</td>
+                                    <td className="px-3 py-1.5 font-mono font-bold text-base text-green-600">{isLast ? s.to : ""}</td>
                                   </tr>
                                 );
-                              }
-                              const { modSize, base, size } = info;
-                              const kMod = s.k % modSize;
-                              const shift = 1 + kMod;
-                              const fromOff = code - base;
-                              const rawSum = fromOff + shift;
-                              const newOff = rawSum % size;
-                              const newCode = newOff + base;
-                              return (
-                                <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                  <td className="px-3 py-2.5 font-mono font-bold text-base text-blue-600">{s.from}</td>
-                                  <td className="px-3 py-2.5 text-slate-500">{info.type}</td>
-                                  <td className="px-3 py-2.5">
-                                    <span className="font-mono font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{s.k}</span>
-                                  </td>
-                                  <td className="px-3 py-2.5 font-mono">
-                                    <span className="text-slate-500">{s.k} mod {modSize} = </span>
-                                    <span className="font-bold text-indigo-600">{kMod}</span>
-                                  </td>
-                                  <td className="px-3 py-2.5 font-mono font-bold">
-                                    <span className="text-slate-500">1 + {kMod} = </span>
-                                    <span className="text-amber-600 bg-amber-50 rounded px-1">+{shift}</span>
-                                  </td>
-                                  <td className="px-3 py-2.5 font-mono text-slate-500">
-                                    ({code} − {base} + {shift}) mod {size} = {rawSum} mod {size} = <span className="text-indigo-600 font-bold">{newOff}</span> → chr({newOff} + {base}) = chr(<span className="text-green-700 font-bold">{newCode}</span>)
-                                  </td>
-                                  <td className="px-3 py-2.5 font-mono font-bold text-base text-green-600">{s.to}</td>
-                                </tr>
-                              );
+                              });
                             })}
                           </tbody>
                         </table>
-                        {encShifts.length > 12 && (
-                          <div className="px-4 py-2 text-xs text-slate-400 italic border-t border-slate-100">+{encShifts.length - 12} more characters follow the same pattern</div>
+                        {encShifts.length > 6 && (
+                          <div className="px-4 py-2 text-xs text-slate-400 italic border-t border-slate-100">+{encShifts.length - 6} more characters follow the same pattern</div>
                         )}
                       </div>
                     </div>
@@ -1477,7 +1610,7 @@ export function GuideSection() {
                 {decShifts.length > 14 && <div className="flex items-center text-slate-400 text-sm italic">+{decShifts.length-14} more…</div>}
               </div>
               <div className="bg-blue-50 rounded-xl p-4 text-sm text-blue-800 mt-3">
-                <strong>Same keystream, opposite direction.</strong> The keystream bytes for this round are <em>identical</em> to what was used during encryption (same key, same column IV → same PRNG output). But instead of <span className="font-mono">+k</span>, we apply <span className="font-mono">−k</span> using modular subtraction.
+                <strong>Same keystream bytes, reversed operations.</strong> The 5 keystream bytes per character for this round are <em>identical</em> to those used during encryption (same key → same PRNG output). But instead of applying the 5 sub-ops <em>forward</em>, decryption applies them in <em>reverse order</em>, using each operation’s mathematical inverse: add↔subtract, multiply↔divide by modular inverse, flip↔flip (its own inverse).
               </div>
             </div>
 
