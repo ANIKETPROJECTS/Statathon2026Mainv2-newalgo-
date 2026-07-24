@@ -1265,41 +1265,177 @@ export function GuideSection() {
 
             {/* Substep C: Multi-op formulas */}
             <BigCard color="bg-white border-amber-200">
-              <h3 className="text-lg font-bold text-slate-800 mb-2">🟡 Sub-step C: The 4 Operation Types</h3>
-              <p className="text-slate-500 text-sm leading-relaxed mb-5">
-                Each character passes through <strong>5 sequential sub-operations</strong> every round. The operation type for sub-op <em>i</em> is chosen by <span className="font-mono bg-slate-100 px-1 rounded">kᵢ mod 4</span>; the amount comes from the remaining bits. All 4 operations are <strong>fully reversible</strong> inside the character’s alphabet so decryption is exact.
-              </p>
-              <div className="space-y-3 mb-5">
-                {([
-                  { opType: 0, name: "Add", badge: "bg-amber-100 text-amber-800 border-amber-300", condition: "k mod 4 = 0", fwd: "v’ = (v + amt) mod S", rev: "v = (v’ − amt + S) mod S", where: "amt = ⌊k/4⌋ mod (S−1) + 1  —  always 1..(S−1)" },
-                  { opType: 1, name: "Subtract", badge: "bg-red-100 text-red-700 border-red-300", condition: "k mod 4 = 1", fwd: "v’ = (v − amt + S×100) mod S", rev: "v = (v’ + amt) mod S", where: "amt = ⌊k/4⌋ mod (S−1) + 1  —  always 1..(S−1)" },
-                  { opType: 2, name: "Multiply (coprime)", badge: "bg-violet-100 text-violet-700 border-violet-300", condition: "k mod 4 = 2", fwd: "v’ = (v × mul) mod S", rev: "v = (v’ × mul⁻¹) mod S  —  modular inverse", where: "mul from coprime list: digits→{3,7,9}, letters→{3,5,7,9,11,…}. Each mul is coprime to S so the inverse always exists." },
-                  { opType: 3, name: "Flip / Complement", badge: "bg-teal-100 text-teal-700 border-teal-300", condition: "k mod 4 = 3", fwd: "v’ = (S − 1 − v) mod S", rev: "Same operation (involutory)", where: "Maps ‘0’↔’9’, ‘a’↔‘z’, ‘A’↔‘Z’. Applying twice gives the original." },
-                ] as const).map(f => (
-                  <div key={f.opType} className="rounded-xl border border-slate-200 p-4">
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className={`text-xs font-bold px-2 py-1 rounded-full border ${f.badge}`}>Type {f.opType}: {f.name}</span>
-                      <span className="text-xs text-slate-400 font-mono">{f.condition}</span>
+              <h3 className="text-lg font-bold text-slate-800 mb-1">🟡 Sub-step C: The 4 Operation Types</h3>
+              <p className="text-slate-400 text-xs font-medium uppercase tracking-wide mb-4">How each character is mathematically scrambled</p>
+
+              {/* Plain-English summary */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                <p className="text-sm text-amber-900 leading-relaxed">
+                  Every character runs through <strong>5 mini-operations</strong> per round. For each mini-op, one keystream byte (<code className="bg-amber-100 px-1 rounded text-xs">k</code>) decides <em>what kind</em> of math to do (<code className="bg-amber-100 px-1 rounded text-xs">k mod 4</code>) and <em>how much</em> to shift (<code className="bg-amber-100 px-1 rounded text-xs">k ÷ 4</code>). The character's position in its alphabet (<code className="bg-amber-100 px-1 rounded text-xs">v</code>) is updated after each step. All four operations are <strong>perfectly reversible</strong>, so decryption always gets the original back exactly.
+                </p>
+              </div>
+
+              {/* How the key byte is split */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+                <div className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-3">How one keystream byte drives one sub-operation</div>
+                <div className="flex flex-col sm:flex-row gap-4 items-stretch">
+                  <div className="flex-1 bg-white border border-slate-200 rounded-lg p-3">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Low 2 bits → Operation type</div>
+                    <div className="font-mono text-sm font-bold text-slate-700 mb-1">k mod 4</div>
+                    <div className="text-xs text-slate-500">Gives 0, 1, 2, or 3 — picks Add / Subtract / Multiply / Flip</div>
+                  </div>
+                  <div className="flex items-center text-slate-300 font-bold text-lg">+</div>
+                  <div className="flex-1 bg-white border border-slate-200 rounded-lg p-3">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Upper bits → Shift amount</div>
+                    <div className="font-mono text-sm font-bold text-slate-700 mb-1">⌊k / 4⌋ mod (S−1) + 1</div>
+                    <div className="text-xs text-slate-500">Always between 1 and S−1 — determines how far to shift (S = alphabet size)</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Operation cards */}
+              <div className="space-y-5 mb-6">
+
+                {/* Op 0: Add */}
+                <div className="rounded-xl border-2 border-amber-200 overflow-hidden">
+                  <div className="bg-amber-50 px-4 py-3 flex items-center gap-3">
+                    <span className="bg-amber-400 text-white text-xs font-black px-2.5 py-1 rounded-full">Type 0</span>
+                    <span className="font-bold text-amber-900 text-base">Add</span>
+                    <span className="ml-auto font-mono text-xs bg-amber-100 text-amber-700 border border-amber-300 px-2 py-0.5 rounded">k mod 4 = 0</span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      <strong>In plain English:</strong> Shift the character's alphabet position forward by <code className="bg-slate-100 px-1 rounded text-xs">amt</code> steps. Wrap around if you go past the end (like clock arithmetic — going past midnight loops back to 12).
+                    </p>
+                    <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      <span className="font-semibold text-slate-600">Example:</span> digit '3' (position 3 in 0–9) + amt 5 → position 8 → character '8'
                     </div>
-                    <div className="grid grid-cols-[2fr_2fr_3fr] gap-3 text-xs">
-                      <div>
-                        <div className="text-slate-400 font-semibold mb-1">Encrypt:</div>
-                        <div className="font-mono bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-emerald-700">{f.fwd}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-emerald-600 uppercase mb-1.5">🔒 Encrypt</div>
+                        <div className="font-mono text-sm text-emerald-800 font-bold">v' = (v + amt) mod S</div>
                       </div>
-                      <div>
-                        <div className="text-slate-400 font-semibold mb-1">Decrypt (reverse):</div>
-                        <div className="font-mono bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-slate-600">{f.rev}</div>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-blue-600 uppercase mb-1.5">🔓 Decrypt</div>
+                        <div className="font-mono text-sm text-blue-800 font-bold">v = (v' − amt + S) mod S</div>
                       </div>
-                      <div>
-                        <div className="text-slate-400 font-semibold mb-1">Amount / multiplier:</div>
-                        <div className="text-slate-500 leading-relaxed">{f.where}</div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">📐 Amount</div>
+                        <div className="font-mono text-xs text-slate-700">⌊k/4⌋ mod (S−1) + 1</div>
+                        <div className="text-[10px] text-slate-400 mt-1">Always 1 to S−1</div>
                       </div>
                     </div>
                   </div>
-                ))}
+                </div>
+
+                {/* Op 1: Subtract */}
+                <div className="rounded-xl border-2 border-red-200 overflow-hidden">
+                  <div className="bg-red-50 px-4 py-3 flex items-center gap-3">
+                    <span className="bg-red-500 text-white text-xs font-black px-2.5 py-1 rounded-full">Type 1</span>
+                    <span className="font-bold text-red-900 text-base">Subtract</span>
+                    <span className="ml-auto font-mono text-xs bg-red-100 text-red-700 border border-red-300 px-2 py-0.5 rounded">k mod 4 = 1</span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      <strong>In plain English:</strong> Shift the character's position backward by <code className="bg-slate-100 px-1 rounded text-xs">amt</code> steps. Wrap around from the beginning back to the end if needed. This is exactly the reverse of Add — decrypting just adds instead of subtracts.
+                    </p>
+                    <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      <span className="font-semibold text-slate-600">Example:</span> digit '2' (position 2) − amt 5 → 2 − 5 + 10 = 7 → character '7' (the +10 prevents going below 0)
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-emerald-600 uppercase mb-1.5">🔒 Encrypt</div>
+                        <div className="font-mono text-sm text-emerald-800 font-bold">v' = (v − amt + S) mod S</div>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-blue-600 uppercase mb-1.5">🔓 Decrypt</div>
+                        <div className="font-mono text-sm text-blue-800 font-bold">v = (v' + amt) mod S</div>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">📐 Amount</div>
+                        <div className="font-mono text-xs text-slate-700">⌊k/4⌋ mod (S−1) + 1</div>
+                        <div className="text-[10px] text-slate-400 mt-1">Always 1 to S−1</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Op 2: Multiply */}
+                <div className="rounded-xl border-2 border-violet-200 overflow-hidden">
+                  <div className="bg-violet-50 px-4 py-3 flex items-center gap-3">
+                    <span className="bg-violet-600 text-white text-xs font-black px-2.5 py-1 rounded-full">Type 2</span>
+                    <span className="font-bold text-violet-900 text-base">Multiply (coprime)</span>
+                    <span className="ml-auto font-mono text-xs bg-violet-100 text-violet-700 border border-violet-300 px-2 py-0.5 rounded">k mod 4 = 2</span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      <strong>In plain English:</strong> Multiply the character's position by a special number (<code className="bg-slate-100 px-1 rounded text-xs">mul</code>) then wrap around. The key word is <em>coprime</em> — the multiplier shares no common factors with the alphabet size, which guarantees every position maps to a unique new position and can be perfectly undone.
+                    </p>
+                    <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      <span className="font-semibold text-slate-600">Example:</span> digit '3' (position 3) × 7 = 21 → 21 mod 10 = 1 → character '1'. Decrypt: 1 × 3 (inverse of 7 mod 10) = 3 ✓
+                    </div>
+                    <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-violet-800">
+                      <strong>Coprime multipliers used:</strong> digits (S=10) → {'{'}3, 7, 9{'}'} &nbsp;|&nbsp; lowercase letters (S=26) → {'{'}3, 5, 7, 9, 11, 15, …{'}'} &nbsp;|&nbsp; uppercase letters (S=26) → same set
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-emerald-600 uppercase mb-1.5">🔒 Encrypt</div>
+                        <div className="font-mono text-sm text-emerald-800 font-bold">v' = (v × mul) mod S</div>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-blue-600 uppercase mb-1.5">🔓 Decrypt</div>
+                        <div className="font-mono text-sm text-blue-800 font-bold">v = (v' × mul⁻¹) mod S</div>
+                        <div className="text-[10px] text-blue-500 mt-1">mul⁻¹ = modular inverse of mul</div>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">📐 Multiplier</div>
+                        <div className="font-mono text-xs text-slate-700">chosen from coprime list</div>
+                        <div className="text-[10px] text-slate-400 mt-1">Unique inverse always exists</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Op 3: Flip */}
+                <div className="rounded-xl border-2 border-teal-200 overflow-hidden">
+                  <div className="bg-teal-50 px-4 py-3 flex items-center gap-3">
+                    <span className="bg-teal-600 text-white text-xs font-black px-2.5 py-1 rounded-full">Type 3</span>
+                    <span className="font-bold text-teal-900 text-base">Flip / Complement</span>
+                    <span className="ml-auto font-mono text-xs bg-teal-100 text-teal-700 border border-teal-300 px-2 py-0.5 rounded">k mod 4 = 3</span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      <strong>In plain English:</strong> Mirror the character to the opposite end of the alphabet. '0' swaps with '9', 'a' swaps with 'z', 'A' swaps with 'Z'. This is its own inverse — doing it twice returns the original, so <em>no amount is needed</em>.
+                    </p>
+                    <div className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      <span className="font-semibold text-slate-600">Digit examples:</span> '0'↔'9' &nbsp; '1'↔'8' &nbsp; '2'↔'7' &nbsp; '3'↔'6' &nbsp; '4'↔'5'
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-emerald-600 uppercase mb-1.5">🔒 Encrypt</div>
+                        <div className="font-mono text-sm text-emerald-800 font-bold">v' = (S − 1 − v)</div>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-blue-600 uppercase mb-1.5">🔓 Decrypt</div>
+                        <div className="font-mono text-sm text-blue-800 font-bold">Same operation</div>
+                        <div className="text-[10px] text-blue-500 mt-1">Self-inverse (involutory)</div>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">📐 Amount</div>
+                        <div className="font-mono text-xs text-slate-700">None needed</div>
+                        <div className="text-[10px] text-slate-400 mt-1">Apply twice → original</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
-              <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 text-xs text-slate-600">
-                <strong>Symbol / space / other:</strong> All 5 sub-ops are skipped; the character passes through unchanged to preserve the CSV format.
+
+              <div className="rounded-xl bg-slate-100 border border-slate-200 p-4 flex gap-3 items-start text-sm text-slate-600">
+                <span className="text-lg leading-none">ℹ️</span>
+                <div>
+                  <strong>Symbols, spaces, and punctuation</strong> — All 5 sub-ops are skipped entirely. These characters pass through unchanged so that the CSV structure (commas, newlines) is always preserved.
+                </div>
               </div>
             </BigCard>
             {/* Round selector + visualization */}
@@ -1349,79 +1485,143 @@ export function GuideSection() {
 
                     {/* Per-character 5-op derivation table */}
                     <div className="rounded-xl border border-slate-200 overflow-hidden">
-                      <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">🔢 5-Operation derivation — Round {encRoundIdx+1}</span>
-                        <span className="text-[10px] text-slate-400">each character applies 5 sub-ops using 5 independent keystream bytes</span>
+                      <div className="bg-slate-800 px-5 py-3 border-b border-slate-700 flex flex-wrap items-center gap-3">
+                        <span className="text-sm font-bold text-white">🔢 5-Operation Derivation — Round {encRoundIdx+1}</span>
+                        <span className="text-xs text-slate-400">Each character passes through 5 sub-ops, each driven by one keystream byte</span>
+                      </div>
+                      {/* Column legend */}
+                      <div className="bg-slate-700 px-5 py-2 flex flex-wrap gap-x-6 gap-y-1 text-[10px] text-slate-300 border-b border-slate-600">
+                        <span><span className="font-bold text-slate-100">Char</span> — the original → encrypted character</span>
+                        <span><span className="font-bold text-slate-100">Step</span> — which of the 5 sub-operations this row is</span>
+                        <span><span className="font-bold text-slate-100">k byte</span> — keystream byte consumed by this step</span>
+                        <span><span className="font-bold text-slate-100">Op</span> — operation chosen by k mod 4</span>
+                        <span><span className="font-bold text-slate-100">Amount</span> — shift/multiplier from ⌊k/4⌋</span>
+                        <span><span className="font-bold text-slate-100">Position</span> — alphabet index before → after</span>
+                        <span><span className="font-bold text-slate-100">Working</span> — the full arithmetic</span>
                       </div>
                       <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
+                        <table className="w-full text-sm">
                           <thead>
-                            <tr className="border-b border-slate-200 bg-slate-50/80">
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold w-20">Char</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold w-24">Sub-op</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">k byte</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">Operation</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">Amount</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">v before→after</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold">Math</th>
-                              <th className="px-3 py-2 text-left text-slate-500 font-semibold w-12">Out</th>
+                            <tr className="border-b-2 border-slate-200 bg-slate-50">
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide w-28">Char</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide w-20">Step</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide">k byte</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide">Operation</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide">Amount</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide">Position (v)</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide">Working</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide w-16">Result</th>
                             </tr>
                           </thead>
                           <tbody>
                             {encShifts.slice(0, 6).flatMap((s, ci) => {
-                              const OP_NAMES = ["add", "subtract", "multiply", "flip"];
-                              const OP_COLORS = [
-                                "text-amber-800 bg-amber-50 border-amber-200",
-                                "text-red-700 bg-red-50 border-red-200",
-                                "text-violet-700 bg-violet-50 border-violet-200",
-                                "text-teal-700 bg-teal-50 border-teal-200",
+                              const OP_NAMES = ["Add", "Subtract", "Multiply", "Flip"];
+                              const OP_BADGE = [
+                                "text-amber-800 bg-amber-100 border-amber-300",
+                                "text-red-700 bg-red-100 border-red-300",
+                                "text-violet-700 bg-violet-100 border-violet-300",
+                                "text-teal-700 bg-teal-100 border-teal-300",
                               ];
+                              const OP_DOT = ["bg-amber-400", "bg-red-400", "bg-violet-500", "bg-teal-500"];
+                              const CHAR_BG = ci % 2 === 0 ? "bg-white" : "bg-slate-50/70";
+                              // separator row between characters (after first)
+                              const sep = ci > 0 ? [
+                                <tr key={`sep-${ci}`}><td colSpan={8} className="h-0 border-t-2 border-slate-200 p-0" /></tr>
+                              ] : [];
                               if (!s.changed || s.microOps.length === 0) {
                                 return [
-                                  <tr key={`s-${ci}`} className="border-b border-slate-100 bg-slate-50/40">
-                                    <td colSpan={8} className="px-3 py-2 text-slate-400 font-mono">
-                                      <span className="font-bold text-slate-500">{s.from}</span>
-                                      <span className="ml-2 text-slate-300">— symbol, all 5 sub-ops skipped, character unchanged</span>
+                                  ...sep,
+                                  <tr key={`s-${ci}`} className={`${CHAR_BG}`}>
+                                    <td colSpan={8} className="px-4 py-3">
+                                      <div className="flex items-center gap-3">
+                                        <span className="font-mono font-bold text-base text-slate-600">{s.from}</span>
+                                        <span className="text-xs text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-3 py-1">symbol / space — all 5 sub-ops skipped, character passes through unchanged</span>
+                                      </div>
                                     </td>
                                   </tr>
                                 ];
                               }
-                              return s.microOps.map((op, mi) => {
-                                const isFirst = mi === 0;
-                                const isLast = mi === 4;
-                                const opLabel = op.opType === 0 ? `+${op.amount}` : op.opType === 1 ? `−${op.amount}` : op.opType === 2 ? `×${op.amount}` : "flip";
-                                const math = op.opType === 0
-                                  ? `(${op.vBefore}+${op.amount}) mod ${op.size}=${op.vAfter}`
-                                  : op.opType === 1
-                                  ? `(${op.vBefore}−${op.amount}+${op.size}) mod ${op.size}=${op.vAfter}`
-                                  : op.opType === 2
-                                  ? `(${op.vBefore}×${op.amount}) mod ${op.size}=${op.vAfter}`
-                                  : `${op.size-1}−${op.vBefore}=${op.vAfter}`;
-                                const finalNote = isLast ? ` → chr(${op.vAfter}+${op.size === 9 ? 49 : op.size === 10 ? 48 : s.to.charCodeAt(0) < 97 ? 65 : 97})='${s.to}'` : "";
-                                return (
-                                  <tr key={`${ci}-${mi}`} className={mi % 2 === 0 ? "bg-white border-b border-slate-50" : "bg-slate-50/50 border-b border-slate-50"}>
-                                    <td className="px-3 py-1.5 font-mono font-bold text-sm">
-                                      {isFirst ? <><span className="text-blue-600">{s.from}</span><span className="text-slate-300 mx-1">→</span><span className="text-green-600">{s.to}</span></> : <span className="text-slate-200">""</span>}
-                                    </td>
-                                    <td className="px-3 py-1.5 text-slate-400 pl-5">op {mi+1}</td>
-                                    <td className="px-3 py-1.5">
-                                      <span className="font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5">{op.k}</span>
-                                    </td>
-                                    <td className="px-3 py-1.5">
-                                      <span className={`font-bold border rounded px-1.5 py-0.5 ${OP_COLORS[op.opType]}`}>{OP_NAMES[op.opType]}</span>
-                                    </td>
-                                    <td className="px-3 py-1.5 font-mono font-bold text-slate-700">{op.opType === 3 ? "—" : op.amount}</td>
-                                    <td className="px-3 py-1.5 font-mono"><span className="text-slate-500">{op.vBefore}</span><span className="text-slate-300 mx-1">→</span><span className="font-bold text-indigo-600">{op.vAfter}</span></td>
-                                    <td className="px-3 py-1.5 font-mono text-slate-500">{math}{finalNote}</td>
-                                    <td className="px-3 py-1.5 font-mono font-bold text-base text-green-600">{isLast ? s.to : ""}</td>
-                                  </tr>
-                                );
-                              });
+                              return [
+                                ...sep,
+                                ...s.microOps.map((op, mi) => {
+                                  const isFirst = mi === 0;
+                                  const isLast = mi === s.microOps.length - 1;
+                                  const math = op.opType === 0
+                                    ? `(${op.vBefore} + ${op.amount}) mod ${op.size} = ${op.vAfter}`
+                                    : op.opType === 1
+                                    ? `(${op.vBefore} − ${op.amount} + ${op.size}) mod ${op.size} = ${op.vAfter}`
+                                    : op.opType === 2
+                                    ? `(${op.vBefore} × ${op.amount}) mod ${op.size} = ${op.vAfter}`
+                                    : `(${op.size} − 1 − ${op.vBefore}) = ${op.vAfter}`;
+                                  const finalNote = isLast ? ` → char '${s.to}'` : "";
+                                  return (
+                                    <tr key={`${ci}-${mi}`} className={`${CHAR_BG} border-b border-slate-100`}>
+                                      {/* Char column — only show on first row, span visually */}
+                                      <td className="px-4 py-3 align-middle">
+                                        {isFirst ? (
+                                          <div className="flex flex-col gap-0.5">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="font-mono font-black text-lg text-blue-600">{s.from}</span>
+                                              <span className="text-slate-300 text-base">→</span>
+                                              <span className="font-mono font-black text-lg text-green-600">{s.to}</span>
+                                            </div>
+                                            <span className="text-[10px] text-slate-400">5 sub-ops total</span>
+                                          </div>
+                                        ) : (
+                                          <div className="w-1 h-full border-l-2 border-slate-200 ml-2 opacity-40" />
+                                        )}
+                                      </td>
+                                      {/* Step */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <div className="flex items-center gap-2">
+                                          <div className={`w-5 h-5 rounded-full ${OP_DOT[op.opType]} flex items-center justify-center text-white text-[10px] font-black shrink-0`}>{mi+1}</div>
+                                          <span className="text-xs text-slate-400 font-medium">of 5</span>
+                                        </div>
+                                      </td>
+                                      {/* k byte */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <span className="font-mono font-bold text-sm bg-amber-50 text-amber-800 border border-amber-300 rounded-lg px-2.5 py-1">{op.k}</span>
+                                      </td>
+                                      {/* Operation */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <span className={`font-bold text-xs border rounded-lg px-2.5 py-1 ${OP_BADGE[op.opType]}`}>{OP_NAMES[op.opType]}</span>
+                                      </td>
+                                      {/* Amount */}
+                                      <td className="px-4 py-3 align-middle font-mono font-bold text-slate-700 text-sm">
+                                        {op.opType === 3 ? <span className="text-slate-300">—</span> : op.amount}
+                                      </td>
+                                      {/* Position */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <div className="flex items-center gap-2 font-mono text-sm">
+                                          <span className="text-slate-500 font-medium">{op.vBefore}</span>
+                                          <span className="text-slate-300">→</span>
+                                          <span className="font-black text-indigo-600">{op.vAfter}</span>
+                                        </div>
+                                      </td>
+                                      {/* Working */}
+                                      <td className="px-4 py-3 align-middle">
+                                        <span className="font-mono text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1 whitespace-nowrap">{math}</span>
+                                        {isLast && <span className="ml-2 text-xs font-bold text-green-700">{finalNote}</span>}
+                                      </td>
+                                      {/* Result */}
+                                      <td className="px-4 py-3 align-middle">
+                                        {isLast ? (
+                                          <span className="font-mono font-black text-xl text-green-600">{s.to}</span>
+                                        ) : (
+                                          <span className="text-slate-200 text-sm">·</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              ];
                             })}
                           </tbody>
                         </table>
                         {encShifts.length > 6 && (
-                          <div className="px-4 py-2 text-xs text-slate-400 italic border-t border-slate-100">+{encShifts.length - 6} more characters follow the same pattern</div>
+                          <div className="px-5 py-3 text-xs text-slate-400 italic border-t-2 border-slate-200 bg-slate-50">
+                            +{encShifts.length - 6} more characters — each follows the same 5-step pattern above
+                          </div>
                         )}
                       </div>
                     </div>
