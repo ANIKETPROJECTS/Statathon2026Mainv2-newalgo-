@@ -698,7 +698,7 @@ export function GuideSection() {
       </div>
 
       {/* ── Content area ──────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-10 py-8">
+      <div className="flex-1 overflow-y-auto px-4 py-8">
 
         {/* ══ STEP 0: Setup ══════════════════════════════════════════ */}
         {step === 0 && (
@@ -1438,8 +1438,8 @@ export function GuideSection() {
                 </div>
               </div>
             </BigCard>
-            {/* Round selector + visualization */}
-            <div className="rounded-2xl bg-slate-50 border-2 border-slate-200 p-6">
+            {/* Round selector + visualization — full bleed */}
+            <div className="-mx-4 bg-slate-50 border-y-2 border-slate-200 px-6 py-6">
               <h3 className="font-bold text-slate-700 mb-4">🔄 Explore Each Encryption Round</h3>
               <div className="flex gap-3 justify-center mb-5">
                 {[0,1,2,3].map(i => (
@@ -1485,36 +1485,42 @@ export function GuideSection() {
 
                     {/* Per-character 5-op derivation table */}
                     <div className="rounded-xl border border-slate-200 overflow-hidden">
-                      <div className="bg-slate-800 px-5 py-3 border-b border-slate-700 flex flex-wrap items-center gap-3">
-                        <span className="text-sm font-bold text-white">🔢 5-Operation Derivation — Round {encRoundIdx+1}</span>
-                        <span className="text-xs text-slate-400">Each character passes through 5 sub-ops, each driven by one keystream byte</span>
+                      <div className="bg-slate-800 px-6 py-4 border-b border-slate-700 flex flex-wrap items-center gap-3">
+                        <span className="text-base font-bold text-white">🔢 5-Operation Derivation — Round {encRoundIdx+1}</span>
+                        <span className="text-xs text-slate-400">Each character passes through 5 independent sub-operations, one keystream byte per step</span>
                       </div>
-                      {/* Column legend */}
-                      <div className="bg-slate-700 px-5 py-2 flex flex-wrap gap-x-6 gap-y-1 text-[10px] text-slate-300 border-b border-slate-600">
-                        <span><span className="font-bold text-slate-100">Char</span> — the original → encrypted character</span>
-                        <span><span className="font-bold text-slate-100">Step</span> — which of the 5 sub-operations this row is</span>
-                        <span><span className="font-bold text-slate-100">k byte</span> — keystream byte consumed by this step</span>
-                        <span><span className="font-bold text-slate-100">Op</span> — operation chosen by k mod 4</span>
-                        <span><span className="font-bold text-slate-100">Amount</span> — shift/multiplier from ⌊k/4⌋</span>
-                        <span><span className="font-bold text-slate-100">Position</span> — alphabet index before → after</span>
-                        <span><span className="font-bold text-slate-100">Working</span> — the full arithmetic</span>
+                      {/* Column guide */}
+                      <div className="bg-slate-700 px-6 py-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-8 gap-y-2 text-[11px] text-slate-300 border-b border-slate-600">
+                        <span><span className="font-bold text-white">Char</span> — input → output character</span>
+                        <span><span className="font-bold text-white">Step</span> — sub-op number (1–5)</span>
+                        <span><span className="font-bold text-white">k byte</span> — raw keystream value</span>
+                        <span><span className="font-bold text-white">k mod 4</span> — selects operation type (0–3)</span>
+                        <span><span className="font-bold text-white">⌊k/4⌋</span> — upper bits, used to derive amount</span>
+                        <span><span className="font-bold text-white">Operation</span> — which of the 4 types is applied</span>
+                        <span><span className="font-bold text-white">Amount</span> — the shift/multiplier used</span>
+                        <span><span className="font-bold text-white">Alphabet (S)</span> — character class &amp; alphabet size</span>
+                        <span><span className="font-bold text-white">v before → after</span> — position index before &amp; after</span>
+                        <span><span className="font-bold text-white">Full Working</span> — the complete arithmetic</span>
                       </div>
                       <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
+                        <table className="w-full text-sm min-w-[1100px]">
                           <thead>
                             <tr className="border-b-2 border-slate-200 bg-slate-50">
-                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide w-28">Char</th>
-                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide w-20">Step</th>
-                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide">k byte</th>
-                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide">Operation</th>
-                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide">Amount</th>
-                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide">Position (v)</th>
-                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide">Working</th>
-                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-xs uppercase tracking-wide w-16">Result</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">Char</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">Step</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">k byte</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">k mod 4</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">⌊k/4⌋</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">Operation</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">Amount</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">Alphabet (S)</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">v before → after</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">Full Working</th>
+                              <th className="px-4 py-3 text-left text-slate-500 font-bold text-[11px] uppercase tracking-wide">Result</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {encShifts.slice(0, 6).flatMap((s, ci) => {
+                            {encShifts.flatMap((s, ci) => {
                               const OP_NAMES = ["Add", "Subtract", "Multiply", "Flip"];
                               const OP_BADGE = [
                                 "text-amber-800 bg-amber-100 border-amber-300",
@@ -1523,19 +1529,27 @@ export function GuideSection() {
                                 "text-teal-700 bg-teal-100 border-teal-300",
                               ];
                               const OP_DOT = ["bg-amber-400", "bg-red-400", "bg-violet-500", "bg-teal-500"];
-                              const CHAR_BG = ci % 2 === 0 ? "bg-white" : "bg-slate-50/70";
-                              // separator row between characters (after first)
+                              const CHAR_BG = ci % 2 === 0 ? "bg-white" : "bg-blue-50/30";
                               const sep = ci > 0 ? [
-                                <tr key={`sep-${ci}`}><td colSpan={8} className="h-0 border-t-2 border-slate-200 p-0" /></tr>
+                                <tr key={`sep-${ci}`}><td colSpan={11} className="h-0 border-t-2 border-slate-200 p-0" /></tr>
                               ] : [];
+
+                              const alphabetLabel = (size: number) => {
+                                if (size === 10) return "digits 0–9 (S=10)";
+                                if (size === 26) return s.from >= 'a' && s.from <= 'z' ? "a–z lowercase (S=26)" : "A–Z uppercase (S=26)";
+                                return `S=${size}`;
+                              };
+
                               if (!s.changed || s.microOps.length === 0) {
                                 return [
                                   ...sep,
                                   <tr key={`s-${ci}`} className={`${CHAR_BG}`}>
-                                    <td colSpan={8} className="px-4 py-3">
+                                    <td colSpan={11} className="px-4 py-4">
                                       <div className="flex items-center gap-3">
-                                        <span className="font-mono font-bold text-base text-slate-600">{s.from}</span>
-                                        <span className="text-xs text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-3 py-1">symbol / space — all 5 sub-ops skipped, character passes through unchanged</span>
+                                        <span className="font-mono font-black text-xl text-slate-500">{s.from}</span>
+                                        <span className="text-xs text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-4 py-1.5">
+                                          Symbol / space — all 5 sub-ops are skipped. The character passes through unchanged to preserve CSV formatting.
+                                        </span>
                                       </div>
                                     </td>
                                   </tr>
@@ -1546,67 +1560,116 @@ export function GuideSection() {
                                 ...s.microOps.map((op, mi) => {
                                   const isFirst = mi === 0;
                                   const isLast = mi === s.microOps.length - 1;
+                                  const kMod4 = op.k % 4;
+                                  const kDiv4 = Math.floor(op.k / 4);
+                                  const formulaTemplate = op.opType === 0
+                                    ? `(v + amt) mod S`
+                                    : op.opType === 1
+                                    ? `(v − amt + S) mod S`
+                                    : op.opType === 2
+                                    ? `(v × mul) mod S`
+                                    : `S − 1 − v`;
                                   const math = op.opType === 0
                                     ? `(${op.vBefore} + ${op.amount}) mod ${op.size} = ${op.vAfter}`
                                     : op.opType === 1
                                     ? `(${op.vBefore} − ${op.amount} + ${op.size}) mod ${op.size} = ${op.vAfter}`
                                     : op.opType === 2
                                     ? `(${op.vBefore} × ${op.amount}) mod ${op.size} = ${op.vAfter}`
-                                    : `(${op.size} − 1 − ${op.vBefore}) = ${op.vAfter}`;
-                                  const finalNote = isLast ? ` → char '${s.to}'` : "";
+                                    : `${op.size} − 1 − ${op.vBefore} = ${op.vAfter}`;
                                   return (
                                     <tr key={`${ci}-${mi}`} className={`${CHAR_BG} border-b border-slate-100`}>
-                                      {/* Char column — only show on first row, span visually */}
-                                      <td className="px-4 py-3 align-middle">
+                                      {/* Char — only first row */}
+                                      <td className="px-4 py-3.5 align-middle">
                                         {isFirst ? (
-                                          <div className="flex flex-col gap-0.5">
+                                          <div className="flex flex-col gap-1">
                                             <div className="flex items-center gap-1.5">
-                                              <span className="font-mono font-black text-lg text-blue-600">{s.from}</span>
-                                              <span className="text-slate-300 text-base">→</span>
-                                              <span className="font-mono font-black text-lg text-green-600">{s.to}</span>
+                                              <span className="font-mono font-black text-xl text-blue-600">{s.from}</span>
+                                              <span className="text-slate-300 text-lg">→</span>
+                                              <span className="font-mono font-black text-xl text-green-600">{s.to}</span>
                                             </div>
-                                            <span className="text-[10px] text-slate-400">5 sub-ops total</span>
+                                            <span className="text-[10px] text-slate-400 whitespace-nowrap">5 sub-ops</span>
                                           </div>
                                         ) : (
-                                          <div className="w-1 h-full border-l-2 border-slate-200 ml-2 opacity-40" />
+                                          <div className="flex justify-center"><div className="w-0.5 h-5 bg-slate-200 rounded-full" /></div>
                                         )}
                                       </td>
                                       {/* Step */}
-                                      <td className="px-4 py-3 align-middle">
+                                      <td className="px-4 py-3.5 align-middle">
                                         <div className="flex items-center gap-2">
-                                          <div className={`w-5 h-5 rounded-full ${OP_DOT[op.opType]} flex items-center justify-center text-white text-[10px] font-black shrink-0`}>{mi+1}</div>
-                                          <span className="text-xs text-slate-400 font-medium">of 5</span>
+                                          <div className={`w-6 h-6 rounded-full ${OP_DOT[op.opType]} flex items-center justify-center text-white text-xs font-black shrink-0`}>{mi+1}</div>
+                                          <span className="text-[10px] text-slate-400">/ 5</span>
                                         </div>
                                       </td>
                                       {/* k byte */}
-                                      <td className="px-4 py-3 align-middle">
-                                        <span className="font-mono font-bold text-sm bg-amber-50 text-amber-800 border border-amber-300 rounded-lg px-2.5 py-1">{op.k}</span>
+                                      <td className="px-4 py-3.5 align-middle">
+                                        <span className="font-mono font-bold text-sm bg-amber-50 text-amber-800 border border-amber-300 rounded-lg px-3 py-1.5">{op.k}</span>
                                       </td>
-                                      {/* Operation */}
-                                      <td className="px-4 py-3 align-middle">
-                                        <span className={`font-bold text-xs border rounded-lg px-2.5 py-1 ${OP_BADGE[op.opType]}`}>{OP_NAMES[op.opType]}</span>
-                                      </td>
-                                      {/* Amount */}
-                                      <td className="px-4 py-3 align-middle font-mono font-bold text-slate-700 text-sm">
-                                        {op.opType === 3 ? <span className="text-slate-300">—</span> : op.amount}
-                                      </td>
-                                      {/* Position */}
-                                      <td className="px-4 py-3 align-middle">
-                                        <div className="flex items-center gap-2 font-mono text-sm">
-                                          <span className="text-slate-500 font-medium">{op.vBefore}</span>
-                                          <span className="text-slate-300">→</span>
-                                          <span className="font-black text-indigo-600">{op.vAfter}</span>
+                                      {/* k mod 4 */}
+                                      <td className="px-4 py-3.5 align-middle">
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="font-mono text-xs text-slate-500">{op.k} mod 4</span>
+                                          <span className={`font-bold text-base font-mono ${["text-amber-700","text-red-600","text-violet-700","text-teal-600"][op.opType]}`}>= {kMod4}</span>
                                         </div>
                                       </td>
-                                      {/* Working */}
-                                      <td className="px-4 py-3 align-middle">
-                                        <span className="font-mono text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1 whitespace-nowrap">{math}</span>
-                                        {isLast && <span className="ml-2 text-xs font-bold text-green-700">{finalNote}</span>}
+                                      {/* ⌊k/4⌋ */}
+                                      <td className="px-4 py-3.5 align-middle">
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="font-mono text-xs text-slate-500">⌊{op.k}/4⌋</span>
+                                          <span className="font-bold text-base font-mono text-slate-700">= {kDiv4}</span>
+                                        </div>
+                                      </td>
+                                      {/* Operation + formula */}
+                                      <td className="px-4 py-3.5 align-middle">
+                                        <div className="flex flex-col gap-1">
+                                          <span className={`font-bold text-xs border rounded-lg px-2.5 py-1 w-fit ${OP_BADGE[op.opType]}`}>{OP_NAMES[op.opType]}</span>
+                                          <span className="font-mono text-[10px] text-slate-400">{formulaTemplate}</span>
+                                        </div>
+                                      </td>
+                                      {/* Amount */}
+                                      <td className="px-4 py-3.5 align-middle">
+                                        {op.opType === 3 ? (
+                                          <span className="text-slate-300 text-sm">— (none)</span>
+                                        ) : (
+                                          <div className="flex flex-col gap-0.5">
+                                            <span className="font-mono font-black text-lg text-slate-800">{op.amount}</span>
+                                            <span className="text-[10px] text-slate-400">⌊{kDiv4}/{op.opType===2?"coprime":"S−1"}⌋+1</span>
+                                          </div>
+                                        )}
+                                      </td>
+                                      {/* Alphabet */}
+                                      <td className="px-4 py-3.5 align-middle">
+                                        <span className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 whitespace-nowrap">{alphabetLabel(op.size)}</span>
+                                      </td>
+                                      {/* v before → after */}
+                                      <td className="px-4 py-3.5 align-middle">
+                                        <div className="flex items-center gap-2 font-mono">
+                                          <div className="flex flex-col items-center">
+                                            <span className="text-[9px] text-slate-400 uppercase">before</span>
+                                            <span className="text-base font-bold text-slate-600">{op.vBefore}</span>
+                                          </div>
+                                          <span className="text-slate-300 text-lg">→</span>
+                                          <div className="flex flex-col items-center">
+                                            <span className="text-[9px] text-indigo-400 uppercase">after</span>
+                                            <span className="text-base font-black text-indigo-600">{op.vAfter}</span>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      {/* Full Working */}
+                                      <td className="px-4 py-3.5 align-middle">
+                                        <div className="flex flex-col gap-1">
+                                          <span className="font-mono text-xs text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 whitespace-nowrap">{math}</span>
+                                          {isLast && (
+                                            <span className="text-xs font-bold text-green-700 whitespace-nowrap">✓ position {op.vAfter} → char '{s.to}'</span>
+                                          )}
+                                        </div>
                                       </td>
                                       {/* Result */}
-                                      <td className="px-4 py-3 align-middle">
+                                      <td className="px-4 py-3.5 align-middle">
                                         {isLast ? (
-                                          <span className="font-mono font-black text-xl text-green-600">{s.to}</span>
+                                          <div className="flex flex-col items-center gap-0.5">
+                                            <span className="font-mono font-black text-2xl text-green-600">{s.to}</span>
+                                            <span className="text-[9px] text-green-500 uppercase font-bold">done</span>
+                                          </div>
                                         ) : (
                                           <span className="text-slate-200 text-sm">·</span>
                                         )}
@@ -1618,11 +1681,6 @@ export function GuideSection() {
                             })}
                           </tbody>
                         </table>
-                        {encShifts.length > 6 && (
-                          <div className="px-5 py-3 text-xs text-slate-400 italic border-t-2 border-slate-200 bg-slate-50">
-                            +{encShifts.length - 6} more characters — each follows the same 5-step pattern above
-                          </div>
-                        )}
                       </div>
                     </div>
                   </>
