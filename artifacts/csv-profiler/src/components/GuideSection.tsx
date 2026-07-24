@@ -1735,6 +1735,7 @@ export function GuideSection() {
                               ] : [];
 
                               const alphabetLabel = (size: number) => {
+                                if (size === 9)  return "digits 1–9 (S=9)";
                                 if (size === 10) return "digits 0–9 (S=10)";
                                 if (size === 26) return s.from >= 'a' && s.from <= 'z' ? "a–z lowercase (S=26)" : "A–Z uppercase (S=26)";
                                 return `S=${size}`;
@@ -1832,7 +1833,10 @@ export function GuideSection() {
                                         ) : (
                                           <div className="flex flex-col gap-0.5">
                                             <span className="font-mono font-black text-lg text-slate-800">{op.amount}</span>
-                                            <span className="text-[10px] text-slate-400">⌊{kDiv4}/{op.opType===2?"coprime":"S−1"}⌋+1</span>
+                                            {op.opType === 2
+                                              ? <span className="text-[10px] text-slate-400">coprimes[{kDiv4} mod n]</span>
+                                              : <span className="text-[10px] text-slate-400">({kDiv4} mod {op.size - 1}) + 1</span>
+                                            }
                                           </div>
                                         )}
                                       </td>
