@@ -1,47 +1,48 @@
-# AIRAVATA DEA
+# AIRAVATA DEA — CSV Data Profiler
 
-A CSV/fixed-width data profiler and privacy risk assessment tool — upload layout files and data files, profile columns, anonymize sensitive fields, and export reports.
+## Project overview
 
-## Run & Operate
-
-- Main workflow: `artifacts/csv-profiler: web` — starts both Vite frontend and the Express API server (port 3001)
-- `pnpm --filter @workspace/api-server run dev` — run the API server standalone
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+A monorepo web application for converting, anonymizing, and risk-assessing fixed-width format (FWF) survey datasets (e.g. NSSO/HCES). The app converts FWF files to CSV, profiles the data, performs privacy risk assessment using the Prosecutor Attack model (k-anonymity, l-diversity, t-closeness), and generates Word/CSV risk reports.
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- **Frontend**: React 19, Vite 7, Tailwind CSS 4, Radix UI, TanStack Query/Table, Recharts, Wouter
+- **Backend**: Express 5, Pino logging
+- **Database**: Drizzle ORM + PostgreSQL
+- **Package manager**: pnpm (workspaces monorepo)
+- **Language**: TypeScript
 
-## Where things live
+## Monorepo layout
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+```
+artifacts/
+  csv-profiler/     # Main React frontend (port 5000 in dev)
+  api-server/       # Express backend (port 3001 in dev)
+  mockup-sandbox/   # UI component prototyping environment
+lib/
+  db/               # Drizzle ORM schema and PostgreSQL client
+  api-spec/         # OpenAPI definition + Orval codegen config
+  api-client-react/ # Generated TanStack Query hooks
+  api-zod/          # Generated Zod schemas
+```
 
-## Architecture decisions
+## How to run
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+The configured workflow `artifacts/csv-profiler: web` starts both the frontend (Vite) and the API server together:
 
-## Product
+```
+pnpm --filter @workspace/csv-profiler run dev
+```
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+This runs:
+- Vite dev server on a dynamic port (previewed by Replit)
+- API server on port 3001
+
+## Environment
+
+- `DATABASE_URL` — auto-provisioned by Replit (PostgreSQL)
+- `SESSION_SECRET` — stored as a Replit Secret
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-- Replit's workflow runner injects a dynamic `PORT` env var. The frontend dev script must NOT override `PORT` for Vite (Vite should use the injected value), but the API server's dev script hardcodes `PORT=3001` so both services don't race for the same port. The Vite proxy config forwards `/api` → `localhost:3001`.
-- After `pnpm install`, always run `pnpm --filter @workspace/db run push` before starting the app if the schema may have changed.
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Keep existing monorepo structure and stack — do not restructure or migrate.
