@@ -514,7 +514,7 @@ export default function FWFConverter() {
                 <Lock className="w-6 h-6 text-emerald-600" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-black">Step 3 — AES-256-GCM Encrypt / Decrypt</h2>
+                <h2 className="text-lg font-semibold text-black">Step 3 — 4-Round FPE Anonymize / Decrypt</h2>
                 <p className="text-sm text-gray-500 mt-0.5">Key settings apply to all files below</p>
               </div>
             </div>
@@ -579,7 +579,7 @@ export default function FWFConverter() {
                     <div className="flex flex-col sm:flex-row gap-3">
                       <button onClick={() => handleEncrypt(df.id)} disabled={df.encRunning || df.origDownloading || df.encColsList.length === 0}
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-black text-white text-base font-semibold hover:bg-gray-800 disabled:opacity-50 transition-colors">
-                        {df.encRunning ? <><Spin />Encrypting…</> : <><Lock className="w-4 h-4" />Apply AES-256-GCM encryption</>}
+                        {df.encRunning ? <><Spin />Anonymizing…</> : <><Lock className="w-4 h-4" />Apply 4-round FPE anonymization</>}
                       </button>
                       <button onClick={() => handleDownloadOriginal(df.id)} disabled={df.encRunning || df.origDownloading}
                         className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-500 hover:text-black hover:border-gray-400 disabled:opacity-50 transition-colors whitespace-nowrap">
@@ -595,11 +595,11 @@ export default function FWFConverter() {
                           <p className="text-sm font-semibold text-amber-800 flex items-center gap-2"><Key className="w-4 h-4" />Symmetric Key — save to decrypt later</p>
                           <div className="font-mono text-xs bg-white rounded-lg px-4 py-3 break-all select-all cursor-text leading-relaxed text-black border border-amber-200">{df.encResultKey}</div>
                           <div className="flex flex-wrap gap-2 items-center">
-                            <span className="text-sm text-amber-700 flex-1 min-w-0">AES-256 · {keyModeLabel} · det. {anonDeterministic ? "ON" : "OFF"}</span>
+                            <span className="text-sm text-amber-700 flex-1 min-w-0">4-round FPE · {keyModeLabel} · det. {anonDeterministic ? "ON" : "OFF"}</span>
                             <button onClick={() => navigator.clipboard.writeText(df.encResultKey!)}
                               className="text-sm px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 hover:bg-amber-100 transition-colors font-medium">Copy key</button>
                             <button onClick={() => {
-                              const txt = ["AES-256-GCM Symmetric Key", "=".repeat(40), "", `Key (256-bit hex): ${df.encResultKey}`, "", `Key derivation: ${keyModeLabel}`, `Deterministic mode: ${anonDeterministic ? "ON" : "OFF"}`, `File: ${df.fileName}`, `Generated: ${new Date().toISOString()}`, "", "IMPORTANT — Store in a secure vault. Required to decrypt."].join("\n");
+                              const txt = ["AIRAVATA DEA FPE Key Material", "=".repeat(40), "", `Key (256-bit hex): ${df.encResultKey}`, "", `Key derivation: ${keyModeLabel}`, `Deterministic mode: ${anonDeterministic ? "ON" : "OFF"}`, `File: ${df.fileName}`, `Generated: ${new Date().toISOString()}`, "", "IMPORTANT — Store this key material securely. It is required to decrypt."].join("\n");
                               triggerDownload(new Blob([txt], { type: "text/plain" }), `key_${df.outputBaseName}.txt`);
                             }} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 hover:bg-amber-100 transition-colors font-medium">
                               <Download className="w-3.5 h-3.5" />Download key
@@ -673,7 +673,7 @@ export default function FWFConverter() {
                   {!decryptBlob ? (
                     <button onClick={handleDecrypt} disabled={decryptRunning || !decryptCsvText || decryptCols.size === 0}
                       className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-black text-white text-base font-semibold hover:bg-gray-800 disabled:opacity-50 transition-colors">
-                      {decryptRunning ? <><Spin />Decrypting…</> : <><LockOpen className="w-4 h-4" />Apply AES-256-GCM decryption</>}
+                      {decryptRunning ? <><Spin />Decrypting…</> : <><LockOpen className="w-4 h-4" />Apply 4-round FPE decryption</>}
                     </button>
                   ) : (
                     <div className="space-y-4">
@@ -1090,11 +1090,11 @@ function KeySettings({ keyMode, setKeyMode, seeds, setSeeds, passphrase, setPass
             <input type="checkbox" checked={deterministic} onChange={e => setDeterministic(e.target.checked)} className="accent-blue-600 w-4 h-4 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-semibold">Deterministic mode</p>
-              <p className="text-xs mt-1 opacity-70">Same value → same output. Required for consistent round-trip.</p>
+              <p className="text-xs mt-1 opacity-70">{deterministic ? "Same value → same output." : "Each encrypted cell gets a distinct keystream; decrypt with the same file settings."}</p>
             </div>
           </label>
           <div className="space-y-1 text-sm text-gray-500">
-            {[["Cipher", "AES-256-GCM"], ["Keys", "4 × 256-bit"], ["Rounds", "4-pass chain"], ["IV", "96-bit"], ["Std", "NIST FIPS 197"]].map(([k, v]) => (
+            {[["Cipher", "Custom FPE simulation"], ["Keys", "4 × 256-bit"], ["Rounds", "4-pass chain"], ["Stream", "xorshift128+"], ["Mode", deterministic ? "Deterministic" : "Per-cell"]].map(([k, v]) => (
               <div key={k} className="flex gap-3"><span className="font-semibold text-black w-12 shrink-0">{k}</span><span>{v}</span></div>
             ))}
           </div>

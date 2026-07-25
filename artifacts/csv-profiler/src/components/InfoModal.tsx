@@ -15,7 +15,7 @@ const SECTIONS = [
   { id: "guide",   label: "Interactive Guide" },
   { id: "seeds",   label: "Seed → Key Generation" },
   { id: "fpe",     label: "Format-Preserving Encryption" },
-  { id: "chain",   label: "4-Round Chain & Tiebreaker" },
+  { id: "chain",   label: "4-Round Chain" },
   { id: "kanon",   label: "k-Anonymity & Link Score" },
   { id: "ldiv",    label: "l-Diversity" },
   { id: "tclose",  label: "t-Closeness" },

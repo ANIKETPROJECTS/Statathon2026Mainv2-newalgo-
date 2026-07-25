@@ -98,11 +98,10 @@ function applyOp(v: number, k: number, size: number, muls: number[]): MicroOp {
 }
 
 // 5 micro-operations per character — encrypt
-function fpeEncryptChar5(ch: string, ks5: number[], idx: number, isAllNumeric: boolean): { out: string; microOps: MicroOp[] } {
+function fpeEncryptChar5(ch: string, ks5: number[]): { out: string; microOps: MicroOp[] } {
   const code = ch.charCodeAt(0);
   let base: number, size: number;
-  if (isAllNumeric && idx === 0 && code >= 49 && code <= 57) { base = 49; size = 9; }
-  else if (code >= 48 && code <= 57)  { base = 48; size = 10; }
+  if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
   else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
   else if (code >= 97 && code <= 122) { base = 97; size = 26; }
   else return { out: ch, microOps: [] };
@@ -118,11 +117,10 @@ function fpeEncryptChar5(ch: string, ks5: number[], idx: number, isAllNumeric: b
 }
 
 // 5 micro-operations per character — decrypt (reverses forward ops in reverse order)
-function fpeDecryptChar5(ch: string, ks5: number[], idx: number, isAllNumeric: boolean): { out: string; microOps: MicroOp[] } {
+function fpeDecryptChar5(ch: string, ks5: number[]): { out: string; microOps: MicroOp[] } {
   const code = ch.charCodeAt(0);
   let base: number, size: number;
-  if (isAllNumeric && idx === 0 && code >= 49 && code <= 57) { base = 49; size = 9; }
-  else if (code >= 48 && code <= 57)  { base = 48; size = 10; }
+  if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
   else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
   else if (code >= 97 && code <= 122) { base = 97; size = 26; }
   else return { out: ch, microOps: [] };
@@ -154,7 +152,6 @@ function fpeDecryptChar5(ch: string, ks5: number[], idx: number, isAllNumeric: b
 
 // Updated runRound: consumes 5 keystream bytes per character
 function runRound(value: string, ks: Uint8Array, mode: "enc" | "dec"): { output: string; charShifts: CharShift[] } {
-  const isAllNumeric = /^\d+$/.test(value) && value.length > 1;
   const chars = [...value];
   let ki = 0;
   const charShifts: CharShift[] = [];
@@ -163,11 +160,11 @@ function runRound(value: string, ks: Uint8Array, mode: "enc" | "dec"): { output:
     const ch = chars[idx];
     const ks5 = Array.from({ length: 5 }, () => ks[ki++ % ks.length]);
     if (mode === "enc") {
-      const { out, microOps } = fpeEncryptChar5(ch, ks5, idx, isAllNumeric);
+      const { out, microOps } = fpeEncryptChar5(ch, ks5);
       charShifts.push({ from: ch, to: out, k: ks5[0], changed: ch !== out, microOps });
       output += out;
     } else {
-      const { out, microOps } = fpeDecryptChar5(ch, ks5, idx, isAllNumeric);
+      const { out, microOps } = fpeDecryptChar5(ch, ks5);
       charShifts.push({ from: ch, to: out, k: ks5[0], changed: ch !== out, microOps });
       output += out;
     }
@@ -586,10 +583,9 @@ function SeedBox({ label, value, onChange }: { label: string; value: number; onC
 }
 
 // Small character shift bubble
-function getCharType(code: number, isLeadDigit: boolean): { type: string; base: number; size: number } | null {
+function getCharType(code: number): { type: string; base: number; size: number } | null {
   if (code >= 65 && code <= 90) return { type: "Uppercase", base: 65, size: 26 };
   if (code >= 97 && code <= 122) return { type: "Lowercase", base: 97, size: 26 };
-  if (isLeadDigit)               return { type: "Lead digit", base: 49, size: 9 };
   if (code >= 48 && code <= 57)  return { type: "Digit", base: 48, size: 10 };
   return null;
 }
@@ -602,7 +598,7 @@ const OP_BADGE: Record<number, { label: (n: number) => string; cls: string }> = 
   3: { label: _n => `flip`,   cls: "bg-teal-100 text-teal-700 border-teal-300" },
 };
 
-function ShiftBubble({ shift }: { shift: CharShift; isLeadDigit?: boolean }) {
+function ShiftBubble({ shift }: { shift: CharShift }) {
   if (!shift.changed || shift.microOps.length === 0) {
     return (
       <div className="flex flex-col items-center gap-1 px-2">
@@ -1671,11 +1667,10 @@ export function GuideSection() {
               </div>
               {(() => {
                 const roundInput = trace.encStages[encRoundIdx];
-                const isAllNum = /^\d+$/.test(roundInput) && roundInput.length > 1;
                 return (
                   <>
                     <div className="flex flex-wrap gap-2 justify-center mb-4">
-                      {encShifts.slice(0, 12).map((s, i) => <ShiftBubble key={i} shift={s} isLeadDigit={isAllNum && i === 0} />)}
+                      {encShifts.slice(0, 12).map((s, i) => <ShiftBubble key={i} shift={s} />)}
                       {encShifts.length > 12 && <div className="flex items-center text-slate-400 text-sm italic">+{encShifts.length - 12} more…</div>}
                     </div>
                     {/* Legend */}
@@ -1942,7 +1937,7 @@ export function GuideSection() {
             <BigCard color="bg-white border-violet-200">
               <h3 className="text-lg font-bold text-slate-800 mb-2">↔️ Encryption vs. Decryption — The Exact Formulas</h3>
               <p className="text-slate-500 text-sm leading-relaxed mb-5">
-                The only difference between encrypting and decrypting is the direction of the shift. Both use the <strong>exact same keystream byte k</strong> — generated from the same key and column IV. Encryption adds; decryption subtracts. The <span className="font-mono bg-slate-100 px-1 rounded">+ 90</span> / <span className="font-mono bg-slate-100 px-1 rounded">+ 260</span> large constants prevent the modulo from ever producing a negative result in JavaScript.
+                Both paths consume the <strong>same five keystream bytes</strong> for each character. Encryption applies five forward micro-operations; decryption applies their mathematical inverses in reverse order. The operation type comes from <span className="font-mono bg-slate-100 px-1 rounded">k % 4</span>, and all arithmetic stays inside the character class alphabet.
               </p>
               <div className="overflow-x-auto rounded-xl border border-slate-200">
                 <table className="w-full text-xs border-collapse">
@@ -1954,10 +1949,9 @@ export function GuideSection() {
                   </tr></thead>
                   <tbody>
                     {[
-                      ["Digit (0–9)", "48 + ((c−48 + 1 + k%9) % 10)", "48 + ((c−48 + 90 − 1 − k%9) % 10)", "Adding k then subtracting k mod 10 returns to the original. The +90 is 9×10, a multiple of 10, so it doesn't affect the modulo."],
-                      ["Lead digit (1–9)", "49 + ((c−49 + 1 + k%8) % 9)", "49 + ((c−49 + 81 − 1 − k%8) % 9)", "+81 = 9×9, a multiple of 9. Net shift is exactly 0 mod 9."],
-                      ["Uppercase (A–Z)", "65 + ((c−65 + 1 + k%25) % 26)", "65 + ((c−65 + 260 − 1 − k%25) % 26)", "+260 = 10×26, a multiple of 26. Net shift is 0 mod 26."],
-                      ["Lowercase (a–z)", "97 + ((c−97 + 1 + k%25) % 26)", "97 + ((c−97 + 260 − 1 − k%25) % 26)", "Same as uppercase, base 97."],
+                      ["Digit (0–9)", "v = c−48; apply 5 forward ops with S=10; output = 48+v", "Start at v = c−48; apply inverse ops 5→1 with S=10; output = 48+v", "The inverse of add is subtract, the inverse of subtract is add, multiply uses its modular inverse, and flip is self-inverse."],
+                      ["Uppercase (A–Z)", "v = c−65; apply 5 forward ops with S=26; output = 65+v", "Start at v = c−65; apply inverse ops 5→1 with S=26; output = 65+v", "The same five bytes and operation parameters are reconstructed from the key stream."],
+                      ["Lowercase (a–z)", "v = c−97; apply 5 forward ops with S=26; output = 97+v", "Start at v = c−97; apply inverse ops 5→1 with S=26; output = 97+v", "Same as uppercase, with base 97; case is preserved."],
                       ["Symbol / other", "unchanged", "unchanged", "Nothing to undo."],
                     ].map(([type, enc, dec, why]) => (
                       <tr key={type as string} className="border-t border-slate-100">
@@ -1971,7 +1965,7 @@ export function GuideSection() {
                 </table>
               </div>
               <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800">
-                <strong>Proof it works:</strong> If we encrypt digit '3' using k=7: <span className="font-mono">48 + ((3 + 1 + 7) % 10) = 48 + 1 = '1'</span>. Now decrypt '1' using k=7: <span className="font-mono">48 + ((1 + 90 − 1 − 7) % 10) = 48 + (83 % 10) = 48 + 3 = '3'</span>. ✓ We recover the original.
+                <strong>Proof it works:</strong> each micro-operation is bijective on its alphabet. Decryption reads the same five bytes in reverse order and applies each inverse, so the complete five-operation round returns every digit or letter to its original position.
               </div>
             </BigCard>
 
@@ -1981,9 +1975,9 @@ export function GuideSection() {
               <div className="grid grid-cols-2 gap-5">
                 <div>
                   <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-3">
-                    <div className="font-bold text-red-700 mb-2 text-sm">❌ Wrong: Decrypting in forward order (1→2→3→4)</div>
+                    <div className="font-bold text-red-700 mb-2 text-sm">❌ Wrong: Decrypting the rounds in forward order (1→2→3→4)</div>
                     <div className="text-xs text-red-600 leading-relaxed">
-                      Round 1 decrypt undoes Round 1's shift — but the value we're looking at has had Round 2, 3, and 4 applied <em>on top</em>. So we'd be reversing the wrong transformation. The bits from Round 2–4 would corrupt the result permanently.
+                      Round 1 decrypt is not the inverse of the outermost transformation. The value still has rounds 2–4 applied on top, so reversing in this order does not undo the composition.
                     </div>
                   </div>
                   <div className="bg-green-50 border border-green-200 rounded-xl p-4">
@@ -2255,7 +2249,7 @@ export function GuideSection() {
 
                 {/* Footer notes */}
                 <div className="space-y-1 text-center pt-1">
-                  <p className="text-[10px] text-slate-600">Tiebreaker check: {trace.finalEncrypted} {trace.finalEncrypted === (cellValue || "A") ? "= original ← tiebreaker round applied" : "≠ original ✓  no collision, no adjustment needed"}</p>
+                  <p className="text-[10px] text-slate-600">Identity check: ciphertext may occasionally equal the input; reversibility is verified by the decrypt result below.</p>
                   <p className="text-[10px] text-slate-600">Column IV: same value "{cellValue || "A"}" in a different column → different ciphertext (column name "{colName}" is hashed into IV)</p>
                   <p className="text-[10px] text-slate-600">This prevents frequency analysis across columns even when values repeat</p>
                 </div>
@@ -2342,7 +2336,7 @@ export function GuideSection() {
                     name: "No identity leakage",
                     icon: "👤",
                     badge: "bg-slate-100 text-slate-700",
-                    body: "The actual encryption runtime guarantees each character shifts by at least 1 per round (a mandatory +1 offset in the core shift formula ensures the net displacement is never 0). The interactive simulation on this page uses a richer 5-micro-op model for illustration; individual ops can cancel, but the runtime guarantee still holds for the real anonymisation.",
+                    body: "The runtime preserves character classes and is reversible with the matching key material. It does not guarantee that every character changes on every round: the five operations can cancel, and a final value may occasionally equal its input.",
                     check: true
                   },
                 ].map(p => (

@@ -1,5 +1,6 @@
-// AES-256-GCM Format-Preserving Encryption/Decryption — Streaming Browser Simulation
-// Spec: AES256_GCM_ENCRYPTION.md (xorshift128+ keystream + FPE layer)
+// Four-round format-preserving anonymization/decryption — streaming browser simulation.
+// This is a custom FPE simulation, not an AES-GCM implementation:
+// it uses xorshift128+ keystream bytes and reversible character-class operations.
 // 4-round key chain: each cell is encrypted once per round (round1→round2→round3→round4),
 // decrypted in reverse (round4→round3→round2→round1).
 // Each alphanumeric character passes through 5 independent micro-operations per round,
@@ -226,7 +227,9 @@ export interface AnonymizeResult {
 export function resolveKeyChain(options: AnonymizeOptions): string[] {
   if (options.keyMode === "hex") {
     const base = (options.keyHex ?? "").toLowerCase().trim();
-    if (base.length !== 64) return [base, base, base, base];
+    if (!/^[0-9a-f]{64}$/.test(base)) {
+      throw new Error("A raw hex key must contain exactly 64 hexadecimal characters.");
+    }
     // Chain-derive 4 sub-keys: each key's seed incorporates all prior round indices
     let rolling = (parseInt(base.slice(0, 8), 16) ^ 0xdeadbeef) >>> 0;
     return [0, 1, 2, 3].map(i => {
@@ -235,7 +238,10 @@ export function resolveKeyChain(options: AnonymizeOptions): string[] {
       return generateRandomKey(rolling);
     });
   }
-  if (options.keyMode === "pbkdf2" && options.passphrase.trim().length > 0) {
+  if (options.keyMode === "pbkdf2") {
+    if (options.passphrase.trim().length === 0) {
+      throw new Error("A passphrase is required when PBKDF2 mode is selected.");
+    }
     // Chain-derive 4 sub-keys: each passphrase variant includes all prior round tags
     // so round order is embedded in the key material.
     let tag = "";
@@ -296,7 +302,12 @@ export async function encryptFWFToBlob(
   onProgress: (pct: number) => void
 ): Promise<AnonymizeResult> {
   const keyChain = resolveKeyChain(options);
-  const keyHex = keyChain[0]; // for result metadata
+  // In raw-hex mode, preserve the user-supplied root key in the exported
+  // metadata. keyChain[0] is a derived round key and cannot be pasted back
+  // into hex mode to reconstruct the same chain.
+  const keyHex = options.keyMode === "hex"
+    ? (options.keyHex ?? "").toLowerCase().trim()
+    : keyChain[0];
 
   // Pre-compute 4 per-column keystreams for deterministic mode
   const colKs4: Record<string, Uint8Array[]> = {};
@@ -324,7 +335,11 @@ export async function encryptFWFToBlob(
   const chunks: string[] = [header + "\n"];
 
   const detCache = new Map<string, string>();
-  let ivCounter = 0;
+  // Keep a separate counter per column. This makes non-deterministic
+  // decryption robust when the user selects only a subset of encrypted
+  // columns: each selected column can reproduce its own sequence without
+  // needing counters from the other columns.
+  const ivCounters: Record<string, number> = {};
 
   for (let i = 0; i < total; i += STREAM_CHUNK) {
     const end = Math.min(i + STREAM_CHUNK, total);
@@ -348,10 +363,12 @@ export async function encryptFWFToBlob(
               val = enc;
             }
           } else {
-            ivCounter = (ivCounter + 1) >>> 0;
+            ivCounters[f.varName] = ((ivCounters[f.varName] ?? 0) + 1) >>> 0;
+            const ivCounter = ivCounters[f.varName];
+            const columnSeed = hashColIV(keyChain[0], f.varName);
             // Each round gets a unique IV derived from the counter + round index
             const ksArr = keyChain.map((kh, ri) =>
-              makeCellKsBytes(ksSize(val.length), kh, (ivCounter ^ (ri * 0x12345679)) >>> 0)
+              makeCellKsBytes(ksSize(val.length), kh, (ivCounter ^ columnSeed ^ (ri * 0x12345679)) >>> 0)
             );
             val = encryptChain4(ksArr, val);
           }
@@ -408,7 +425,7 @@ export async function decryptCSVToBlob(
   const chunks: string[] = [headerLine + "\n"];
 
   const detCache = new Map<string, string>();
-  let ivCounter = 0;
+  const ivCounters: Record<string, number> = {};
 
   for (let i = 0; i < total; i += STREAM_CHUNK) {
     const end = Math.min(i + STREAM_CHUNK, total);
@@ -433,9 +450,11 @@ export async function decryptCSVToBlob(
               val = dec;
             }
           } else {
-            ivCounter = (ivCounter + 1) >>> 0;
+            ivCounters[col] = ((ivCounters[col] ?? 0) + 1) >>> 0;
+            const ivCounter = ivCounters[col];
+            const columnSeed = hashColIV(keyChain[0], col);
             const ksArr = keyChain.map((kh, ri) =>
-              makeCellKsBytes(ksSize(val.length), kh, (ivCounter ^ (ri * 0x12345679)) >>> 0)
+              makeCellKsBytes(ksSize(val.length), kh, (ivCounter ^ columnSeed ^ (ri * 0x12345679)) >>> 0)
             );
             val = decryptChain4(ksArr, val);
           }

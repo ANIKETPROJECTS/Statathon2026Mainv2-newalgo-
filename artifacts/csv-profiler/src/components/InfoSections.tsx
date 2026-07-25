@@ -170,37 +170,31 @@ colIV = h   [32-bit deterministic IV per key+column pair]`}</Formula>
       <Formula>{`combined = (parseInt(keyHex[0..7], 16) ⊕ ivSeed) >>> 0
 ks[i]    = ⌊ xorshift128+(combined) × 256 ⌋   for i = 0..len-1`}</Formula>
 
-      <H>FPE Character Shift — Digits</H>
-      <P>Every digit is shifted by at least 1 position within its alphabet. For leading digits of all-numeric strings, the range is restricted to 1–9 (no leading zero):</P>
-      <Formula>{`// General digit (position idx, code c, keystream byte k):
-c' = 48 + ((c - 48 + 1 + (k mod 9)) mod 10)
+      <H>FPE Character Transform</H>
+      <P>Each alphanumeric character consumes five keystream bytes. Each byte selects one reversible operation: add, subtract, multiply by a coprime, or flip/complement. Digits use the 0–9 alphabet; letters use a 26-character alphabet. There is no special leading-digit rule, so leading zeroes are preserved as ordinary digit characters.</P>
+      <Formula>{`// For each character, with alphabet size S:
+v = code - base
+for each of 5 keystream bytes k:
+  op = k mod 4
+  add/sub amount = (floor(k / 4) mod (S - 1)) + 1
+  multiply factor = coprime[floor(k / 4) mod coprime.length]
 
-// Leading digit of all-numeric value (avoids leading zero):
-d  = c - 49                          [map '1'..'9' → 0..8]
-c' = 49 + ((d + 1 + (k mod 8) + 81) mod 9)
+op 0: v = (v + amount) mod S
+op 1: v = (v - amount) mod S
+op 2: v = (v × factor) mod S
+op 3: v = S - 1 - v
 
-// Decryption (exact inverse):
-c  = 48 + ((c' - 48 - 1 - (k mod 9) + 100) mod 10)`}</Formula>
-
-      <H>FPE Character Shift — Letters</H>
-      <P>Uppercase and lowercase letters are shifted independently, preserving case:</P>
-      <Formula>{`// Uppercase A–Z (code c, keystream byte k):
-c' = 65 + ((c - 65 + 1 + (k mod 25)) mod 26)
-
-// Lowercase a–z:
-c' = 97 + ((c - 97 + 1 + (k mod 25)) mod 26)
-
-// Decryption (exact inverse, +2600 avoids negative mod):
-c  = 65 + ((c' - 65 - 1 - (k mod 25) + 2600) mod 26)
-c  = 97 + ((c' - 97 - 1 - (k mod 25) + 2600) mod 26)`}</Formula>
+// Decryption uses the same five bytes in reverse:
+add ↔ subtract, multiply ↔ modular inverse, flip ↔ flip`}</Formula>
 
       <Table rows={[
         ["c", "Original character code"],
         ["c'", "Encrypted character code"],
         ["k", "Keystream byte at this character position"],
         ["mod", "Modulo (keeps result within alphabet range)"],
-        ["+1", "Minimum shift — guarantees c' ≠ c for any k"],
-        ["+81, +100, +2600", "Additive bias to prevent negative modular result"],
+        ["S", "Alphabet size: 10 for digits, 26 for letters"],
+        ["op", "Operation selected by k mod 4"],
+        ["factor⁻¹", "Modular inverse used to undo multiplication"],
       ]} />
     </div>
   );
@@ -209,7 +203,7 @@ c  = 97 + ((c' - 97 - 1 - (k mod 25) + 2600) mod 26)`}</Formula>
 export function SectionChain() {
   return (
     <div>
-      <P>A single FPE pass could be reversed if an attacker knew the key. AIRAVATA DEA chains <strong>four independent rounds</strong>, each using a different key derived from the seed sequence. The net shift is the sum of four independent random shifts.</P>
+      <P>A single FPE pass could be reversed if an attacker knew the key. AIRAVATA DEA chains <strong>four rounds</strong>, each using a different derived key. Each round is a composition of five reversible operations per character; the overall transformation is undone in reverse round order.</P>
 
       <H>4-Round Encryption Chain</H>
       <Formula>{`// Encrypt value v through all four round keys:
@@ -228,19 +222,8 @@ v₁ = FPE_decrypt(ks₂, v₂)
 v₀ = FPE_decrypt(ks₁, v₁)
 plaintext = v₀`}</Formula>
 
-      <H>Tiebreaker Round (5th Round)</H>
-      <P>In the astronomically rare case where 4 rounds produce an output equal to the original plaintext (all four shifts sum to a multiple of the alphabet size), a 5th blended round is applied symmetrically:</P>
-      <Formula>{`// Blended keystream (XOR of all 4 round keystrams, byte-by-byte):
-ks_blend[i] = ks₁[i] ⊕ ks₂[i] ⊕ ks₃[i] ⊕ ks₄[i]
-// Non-zero guarantee: if ks_blend[i] = 0, set ks_blend[i] = 1
-
-// 5th tiebreaker round applied only when v₄ = v₀:
-if (v₄ === original):
-  ciphertext = FPE_encrypt(ks_blend, v₄)
-
-// Decryption detects tiebreaker automatically:
-// Try normal 4-round decrypt → re-encrypt → check match
-// If mismatch, decrypt the blend round first, then 4 normal rounds`}</Formula>
+      <H>Collision and identity behavior</H>
+      <P>The runtime does not add a tiebreaker round. Because the transformation is a permutation, an encrypted value can occasionally equal its input; this is not a decryption failure. The guide’s round-trip check verifies reversibility, not that every character or value changes.</P>
 
       <H>Non-Deterministic Mode — Per-Cell IV</H>
       <P>In non-deterministic mode, each cell gets a unique IV from a monotonic counter XOR-mixed with the round index, making identical values in the same column encrypt to different ciphertexts:</P>
@@ -252,9 +235,8 @@ For each round i ∈ {0, 1, 2, 3}:
 
       <Table rows={[
         ["ks₁…ks₄", "Keystream byte arrays, one per round"],
-        ["ks_blend", "XOR of all four keystreams (tiebreaker)"],
         ["counter", "Monotonic cell counter (non-det. mode only)"],
-        ["0x12345679", "Round-index multiplier for IV diversification"],
+        ["0x12345679", "Round-index multiplier for per-round IV diversification"],
       ]} />
     </div>
   );
