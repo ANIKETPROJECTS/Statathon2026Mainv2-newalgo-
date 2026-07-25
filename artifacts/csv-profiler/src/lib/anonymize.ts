@@ -1,7 +1,10 @@
 // AES-256-GCM Format-Preserving Encryption/Decryption — Streaming Browser Simulation
 // Spec: AES256_GCM_ENCRYPTION.md (xorshift128+ keystream + FPE layer)
-// 4-round key chain: each cell is encrypted once per seed (seed1→seed2→seed3→seed4),
-// decrypted in reverse (seed4→seed3→seed2→seed1). Final value is guaranteed ≠ original.
+// 4-round key chain: each cell is encrypted once per round (round1→round2→round3→round4),
+// decrypted in reverse (round4→round3→round2→round1).
+// Each alphanumeric character passes through 5 independent micro-operations per round,
+// consuming 5 keystream bytes. Non-alphanumeric characters are passed through unchanged
+// (consuming 5 keystream bytes to keep offsets aligned).
 
 // ── §9 — xorshift128+ PRNG ────────────────────────────────────────────────────
 function makeKeystream(seed: number) {
@@ -59,101 +62,115 @@ function makeCellKsBytes(size: number, keyHex: string, ivSeed: number): Uint8Arr
   return ksBytes;
 }
 
-// ── §10 — Format-preserving encryption ───────────────────────────────────────
-// Each round shifts every alphanumeric character by >= 1, so per-round output ≠ input.
-// After 4 rounds, the net shift is the sum of 4 independent random shifts, which is
-// practically guaranteed to be non-zero for any real-world string value.
-// Final guarantee: after 4 rounds, if result still equals original (astronomically rare),
-// one additional pass using the combined-seed key is applied and undone symmetrically.
+// ── §10 — 5-operation format-preserving cipher ───────────────────────────────
+// Each alphanumeric character is transformed by 5 sequential micro-operations,
+// each driven by one keystream byte. The four operation types are:
+//   0 = Add    (v + amount) mod S          — where amount = floor(k/4)%(S-1)+1
+//   1 = Sub    (v - amount) mod S          — same amount derivation
+//   2 = Mul    (v * coprime) mod S         — coprime chosen from COPRIME_MULS[S]
+//   3 = Flip   (S − 1 − v)                — self-inverse complement
+
+function gcd(a: number, b: number): number { return b === 0 ? a : gcd(b, a % b); }
+
+function modInverse(a: number, m: number): number {
+  let [r0, r1, s0, s1] = [a, m, 1, 0];
+  while (r1 !== 0) {
+    const q = Math.floor(r0 / r1);
+    [r0, r1] = [r1, r0 - q * r1];
+    [s0, s1] = [s1, s0 - q * s1];
+  }
+  return ((s0 % m) + m) % m;
+}
+
+// Precomputed coprime multipliers per alphabet size (all m in [2,S) with gcd(m,S)=1)
+const COPRIME_MULS: Record<number, number[]> = {
+  9:  [2, 4, 5, 7, 8],
+  10: [3, 7, 9],
+  26: [3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25],
+};
+function getMuls(size: number): number[] {
+  if (COPRIME_MULS[size]) return COPRIME_MULS[size];
+  const res: number[] = [];
+  for (let m = 2; m < size; m++) if (gcd(m, size) === 1) res.push(m);
+  return res;
+}
+
+// Apply one micro-op forward (returns updated position v′)
+function applyOpFwd(v: number, k: number, size: number, muls: number[]): number {
+  const opType = k % 4;
+  if (opType === 0) return (v + Math.floor(k / 4) % (size - 1) + 1) % size;
+  if (opType === 1) return ((v - (Math.floor(k / 4) % (size - 1) + 1)) % size + size) % size;
+  if (opType === 2) return (v * muls[Math.floor(k / 4) % muls.length]) % size;
+  return (size - 1 - v); // flip — always in [0, S-1], no modulo needed
+}
+
+// Apply the inverse of one micro-op (used during decryption)
+function applyOpInv(v: number, k: number, size: number, muls: number[]): number {
+  const opType = k % 4;
+  if (opType === 0) return ((v - (Math.floor(k / 4) % (size - 1) + 1)) % size + size) % size;
+  if (opType === 1) return (v + Math.floor(k / 4) % (size - 1) + 1) % size;
+  if (opType === 2) return (v * modInverse(muls[Math.floor(k / 4) % muls.length], size)) % size;
+  return (size - 1 - v); // flip is self-inverse
+}
+
+// Encrypt one cell value through one round.
+// Consumes exactly 5 keystream bytes per character (alphanumeric or not).
+// Alphabet selection is purely by character type — no leading-digit special case —
+// so the mapping is unambiguously invertible regardless of intermediate values.
 function encryptFPECell(ksBytes: Uint8Array, value: string): string {
-  const isAllNumeric = /^\d+$/.test(value) && value.length > 1;
+  const chars = [...value];
   let ki = 0;
-  return [...value].map((ch, idx) => {
+  return chars.map((ch) => {
     const code = ch.charCodeAt(0);
-    const k = ksBytes[ki++ % ksBytes.length];
-    if (code >= 48 && code <= 57) {
-      if (isAllNumeric && idx === 0) {
-        const d = code - 49;
-        return String.fromCharCode(49 + ((d + 1 + (k % 8) + 81) % 9));
-      }
-      return String.fromCharCode(48 + ((code - 48 + 1 + (k % 9)) % 10));
-    } else if (code >= 65 && code <= 90) {
-      return String.fromCharCode(65 + ((code - 65 + 1 + (k % 25)) % 26));
-    } else if (code >= 97 && code <= 122) {
-      return String.fromCharCode(97 + ((code - 97 + 1 + (k % 25)) % 26));
-    }
-    return ch;
+    let base: number, size: number;
+    if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
+    else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
+    else if (code >= 97 && code <= 122) { base = 97; size = 26; }
+    else { ki += 5; return ch; } // skip, but still advance 5 bytes to stay in sync
+    const muls = getMuls(size);
+    let v = code - base;
+    for (let i = 0; i < 5; i++) v = applyOpFwd(v, ksBytes[ki++ % ksBytes.length], size, muls);
+    return String.fromCharCode(v + base);
   }).join("");
 }
 
-// ── §10 — Format-preserving decryption (exact reverse) ───────────────────────
+// Decrypt one cell value through one round (exact inverse of encryptFPECell).
+// Reads the same 5 keystream bytes as encryption, applies inverse ops in reverse order.
 function decryptFPECell(ksBytes: Uint8Array, value: string): string {
-  const isAllNumeric = /^\d+$/.test(value) && value.length > 1;
+  const chars = [...value];
   let ki = 0;
-  return [...value].map((ch, idx) => {
+  return chars.map((ch) => {
     const code = ch.charCodeAt(0);
-    const k = ksBytes[ki++ % ksBytes.length];
-    if (code >= 48 && code <= 57) {
-      if (isAllNumeric && idx === 0) {
-        const d = code - 49;
-        return String.fromCharCode(49 + ((d - 1 - (k % 8) + 81) % 9));
-      }
-      return String.fromCharCode(48 + ((code - 48 - 1 - (k % 9) + 100) % 10));
-    } else if (code >= 65 && code <= 90) {
-      return String.fromCharCode(65 + ((code - 65 - 1 - (k % 25) + 2600) % 26));
-    } else if (code >= 97 && code <= 122) {
-      return String.fromCharCode(97 + ((code - 97 - 1 - (k % 25) + 2600) % 26));
-    }
-    return ch;
+    let base: number, size: number;
+    if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
+    else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
+    else if (code >= 97 && code <= 122) { base = 97; size = 26; }
+    else { ki += 5; return ch; }
+    const muls = getMuls(size);
+    // Collect 5 keystream bytes in forward order (same positions as encryption)
+    const ks5: number[] = [];
+    for (let i = 0; i < 5; i++) ks5.push(ksBytes[ki++ % ksBytes.length]);
+    // Apply inverse ops in reverse order (op4⁻¹ → op3⁻¹ → op2⁻¹ → op1⁻¹ → op0⁻¹)
+    let v = code - base;
+    for (let i = 4; i >= 0; i--) v = applyOpInv(v, ks5[i], size, muls);
+    return String.fromCharCode(v + base);
   }).join("");
 }
 
 // ── 4-round chain helpers ─────────────────────────────────────────────────────
 
-// Encrypt value through all 4 keystream rounds (seed1 → seed2 → seed3 → seed4).
-// If after 4 rounds the result still equals the original, applies a 5th tiebreaker
-// round (symmetric with decryptChain4 which also applies/detects the tiebreaker).
-function encryptChain4(ksArr: Uint8Array[], original: string): string {
-  let v = original;
+// Encrypt value through all 4 rounds (round1 → round2 → round3 → round4).
+function encryptChain4(ksArr: Uint8Array[], value: string): string {
+  let v = value;
   for (const ks of ksArr) v = encryptFPECell(ks, v);
-  // Tiebreaker: if result still equals original, apply one more round using the
-  // 5th keystream (XOR blend of all 4) to guarantee final ≠ original.
-  if (v === original && ksArr.length >= 4) {
-    v = encryptFPECell(blendKs(ksArr), v);
-  }
   return v;
 }
 
-// Decrypt in reverse (seed4 → seed3 → seed2 → seed1), then undo tiebreaker if needed.
-function decryptChain4(ksArr: Uint8Array[], encrypted: string): string {
-  // Check if tiebreaker was applied: a tiebreaker was used iff reversing 4+1 rounds
-  // gives a result that, when re-encrypted 5 rounds, matches the input. We detect
-  // this by trying both paths and choosing the one where enc4(result) = encrypted.
-  let vNormal = encrypted;
-  for (let i = ksArr.length - 1; i >= 0; i--) vNormal = decryptFPECell(ksArr[i], vNormal);
-
-  // Verify the normal path: re-encrypt vNormal and see if it matches
-  let check = vNormal;
-  for (const ks of ksArr) check = encryptFPECell(ks, check);
-  if (check === encrypted) return vNormal;
-
-  // Tiebreaker was applied: decrypt the extra round first, then the 4 normal rounds
-  let vTB = decryptFPECell(blendKs(ksArr), encrypted);
-  for (let i = ksArr.length - 1; i >= 0; i--) vTB = decryptFPECell(ksArr[i], vTB);
-  return vTB;
-}
-
-// Create a blended keystream from all 4 keystreams (XOR byte-by-byte)
-function blendKs(ksArr: Uint8Array[]): Uint8Array {
-  const len = ksArr[0].length;
-  const out = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    let b = ksArr[0][i];
-    for (let r = 1; r < ksArr.length; r++) b ^= ksArr[r][i % ksArr[r].length];
-    // Ensure blended byte is non-zero so shift is always >= 1
-    out[i] = b === 0 ? 1 : b;
-  }
-  return out;
+// Decrypt in reverse (round4 → round3 → round2 → round1).
+function decryptChain4(ksArr: Uint8Array[], value: string): string {
+  let v = value;
+  for (let i = ksArr.length - 1; i >= 0; i--) v = decryptFPECell(ksArr[i], v);
+  return v;
 }
 
 // ── CSV helpers ───────────────────────────────────────────────────────────────
@@ -264,6 +281,12 @@ export function resolveKeyHex(options: AnonymizeOptions): string {
 
 const STREAM_CHUNK = 50_000;
 
+// Keystream bytes needed per cell value: 5 bytes per character + 64-byte headroom
+function ksSize(valueLen: number): number { return valueLen * 5 + 64; }
+
+// Pre-computed keystream size for deterministic mode (supports values up to 256 chars)
+const DET_KS_SIZE = 256 * 5 + 64; // = 1344
+
 // ── Streaming encrypt: FWF raw text → anonymized CSV Blob ─────────────────────
 export async function encryptFWFToBlob(
   rawText: string,
@@ -281,7 +304,7 @@ export async function encryptFWFToBlob(
     for (const f of fields) {
       if (encCols.has(f.varName)) {
         colKs4[f.varName] = keyChain.map(kh =>
-          makeCellKsBytes(256, kh, hashColIV(kh, f.varName))
+          makeCellKsBytes(DET_KS_SIZE, kh, hashColIV(kh, f.varName))
         );
       }
     }
@@ -328,7 +351,7 @@ export async function encryptFWFToBlob(
             ivCounter = (ivCounter + 1) >>> 0;
             // Each round gets a unique IV derived from the counter + round index
             const ksArr = keyChain.map((kh, ri) =>
-              makeCellKsBytes(val.length + 32, kh, (ivCounter ^ (ri * 0x12345679)) >>> 0)
+              makeCellKsBytes(ksSize(val.length), kh, (ivCounter ^ (ri * 0x12345679)) >>> 0)
             );
             val = encryptChain4(ksArr, val);
           }
@@ -370,7 +393,7 @@ export async function decryptCSVToBlob(
   if (options.deterministic) {
     for (const col of decCols) {
       colKs4[col] = keyChain.map(kh =>
-        makeCellKsBytes(256, kh, hashColIV(kh, col))
+        makeCellKsBytes(DET_KS_SIZE, kh, hashColIV(kh, col))
       );
     }
   }
@@ -412,7 +435,7 @@ export async function decryptCSVToBlob(
           } else {
             ivCounter = (ivCounter + 1) >>> 0;
             const ksArr = keyChain.map((kh, ri) =>
-              makeCellKsBytes(val.length + 32, kh, (ivCounter ^ (ri * 0x12345679)) >>> 0)
+              makeCellKsBytes(ksSize(val.length), kh, (ivCounter ^ (ri * 0x12345679)) >>> 0)
             );
             val = decryptChain4(ksArr, val);
           }
