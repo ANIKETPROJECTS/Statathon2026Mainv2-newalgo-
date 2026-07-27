@@ -1289,7 +1289,7 @@ export function GuideSection() {
                   <div className="flex items-center text-slate-300 font-bold text-lg">+</div>
                   <div className="flex-1 bg-white border border-slate-200 rounded-lg p-3">
                     <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Upper bits → Shift amount</div>
-                    <div className="font-mono text-sm font-bold text-slate-700 mb-1">⌊k / 4⌋ mod (S−1) + 1</div>
+                    <div className="font-mono text-sm font-bold text-slate-700 mb-1">(⌊k / 4⌋ mod S) + 1</div>
                     <div className="text-xs text-slate-500">Always between 1 and S−1 — determines how far to shift (S = alphabet size)</div>
                   </div>
                 </div>
@@ -1414,7 +1414,7 @@ export function GuideSection() {
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
                             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
                               <div className="font-bold text-slate-600 mb-1">For Add / Subtract:</div>
-                              <div className="font-mono text-slate-700">amt = ⌊k/4⌋ mod (S−1) + 1</div>
+                              <div className="font-mono text-slate-700">amt = (⌊k/4⌋ mod S) + 1</div>
                               <div className="text-slate-400 mt-1">Always 1 to S−1. Never 0 (a shift of 0 does nothing) and never S (which wraps to 0).</div>
                             </div>
                             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
@@ -1514,7 +1514,7 @@ export function GuideSection() {
                       </div>
                       <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                         <div className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">📐 Amount</div>
-                        <div className="font-mono text-xs text-slate-700">⌊k/4⌋ mod (S−1) + 1</div>
+                        <div className="font-mono text-xs text-slate-700">(⌊k/4⌋ mod S) + 1</div>
                         <div className="text-[10px] text-slate-400 mt-1">Always 1 to S−1</div>
                       </div>
                     </div>
@@ -1549,7 +1549,7 @@ export function GuideSection() {
                       </div>
                       <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                         <div className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">📐 Amount</div>
-                        <div className="font-mono text-xs text-slate-700">⌊k/4⌋ mod (S−1) + 1</div>
+                        <div className="font-mono text-xs text-slate-700">(⌊k/4⌋ mod S) + 1</div>
                         <div className="text-[10px] text-slate-400 mt-1">Always 1 to S−1</div>
                       </div>
                     </div>
@@ -1836,7 +1836,7 @@ export function GuideSection() {
                                             <span className="font-mono font-black text-lg text-slate-800">{op.amount}</span>
                                             {op.opType === 2
                                               ? <span className="text-[10px] text-slate-400">coprimes[{kDiv4} mod n]</span>
-                                              : <span className="text-[10px] text-slate-400">({kDiv4} mod {op.size - 1}) + 1</span>
+                                              : <span className="text-[10px] text-slate-400">(⌊k/4⌋ mod S) + 1</span>
                                             }
                                           </div>
                                         )}
