@@ -76,3 +76,67 @@ for (const invalid of [
 }
 
 console.log("anonymize smoke test passed");
+
+// ── Leading-zero-prevention tests ────────────────────────────────────────────
+// Test that encrypt(x)[0] !== '0' for any x that starts with a non-zero digit,
+// and that decrypt(encrypt(x)) === x for all test values across all 4 rounds.
+
+async function encryptSingleValue(
+  value: string,
+  options: AnonymizeOptions,
+): Promise<string> {
+  const singleField: FieldSpec[] = [{ varName: "ID", start: 1, end: value.length }];
+  const line = value.padEnd(value.length);
+  const result = await encryptFWFToBlob(line, singleField, new Set(["ID"]), options, () => {});
+  const text = await result.blob.text();
+  // CSV: header line + data line
+  const lines = text.trim().split("\n");
+  return lines[1]?.trim() ?? "";
+}
+
+async function decryptSingleValue(
+  encrypted: string,
+  options: AnonymizeOptions,
+): Promise<string> {
+  const singleField: FieldSpec[] = [{ varName: "ID", start: 1, end: encrypted.length }];
+  const csvText = `ID\n${encrypted}\n`;
+  const result = await decryptCSVToBlob(csvText, new Set(["ID"]), options, () => {});
+  const text = await result.text();
+  const lines = text.trim().split("\n");
+  return lines[1]?.trim() ?? "";
+}
+
+const testValues = [
+  "12345",
+  "10000",
+  "99999",
+  "50001",
+  "11111",
+  "987654321",
+];
+
+// Verify with multiple seed sets and both key modes
+for (const opts of [
+  base,
+  { ...base, seeds: [1, 2, 3, 4] },
+  { ...base, seeds: [999, 1, 0, 42] },
+]) {
+  for (const v of testValues) {
+    const enc = await encryptSingleValue(v, opts);
+    assert(enc.length === v.length, `length changed: "${v}" → "${enc}"`);
+    assert(enc[0] !== "0", `leading zero in encrypted output: "${v}" → "${enc}"`);
+    const dec = await decryptSingleValue(enc, opts);
+    assert(dec === v, `round-trip failed: "${v}" → enc="${enc}" → dec="${dec}"`);
+  }
+}
+
+// Leading-zero source values: encrypt should not corrupt them
+const leadingZeroValues = ["01234", "00001", "00000", "09999"];
+for (const v of leadingZeroValues) {
+  const enc = await encryptSingleValue(v, base);
+  assert(enc.length === v.length, `length changed for leading-zero value: "${v}" → "${enc}"`);
+  const dec = await decryptSingleValue(enc, base);
+  assert(dec === v, `round-trip failed for leading-zero value: "${v}" → enc="${enc}" → dec="${dec}"`);
+}
+
+console.log("leading-zero-prevention tests passed");

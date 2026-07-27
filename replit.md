@@ -40,8 +40,18 @@ This runs:
 
 ## Environment
 
-- `DATABASE_URL` — auto-provisioned by Replit (PostgreSQL)
+- `DATABASE_URL` — needs to be provisioned via Replit's PostgreSQL integration; once set, run `pnpm --filter @workspace/db run push` to apply the schema
 - `SESSION_SECRET` — stored as a Replit Secret
+
+## Initial setup
+
+On a fresh clone or import, run:
+
+```
+pnpm install
+```
+
+Then start the app with the `artifacts/csv-profiler: web` workflow (covers both Vite frontend on port 5000 and Express API on port 3001).
 
 ## User preferences
 

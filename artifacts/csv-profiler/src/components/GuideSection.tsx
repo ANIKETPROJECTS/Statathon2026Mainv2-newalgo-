@@ -68,11 +68,12 @@ function getMuls(size: number): number[] {
 // opType: 0=add, 1=subtract, 2=multiply(coprime), 3=flip(complement)
 interface MicroOp {
   opType: 0 | 1 | 2 | 3;
-  k: number;       // keystream byte that drives this sub-op
-  amount: number;  // add/sub: shift amount; mul: multiplier; flip: unused (0)
-  vBefore: number; // alphabet offset (0-indexed) before this op
-  vAfter: number;  // alphabet offset (0-indexed) after this op
-  size: number;    // alphabet size
+  k: number;          // keystream byte that drives this sub-op
+  amount: number;     // add/sub: shift amount; mul: multiplier; flip: unused (0)
+  vBefore: number;    // alphabet offset (0-indexed) before this op
+  vAfter: number;     // alphabet offset (0-indexed) after this op
+  size: number;       // alphabet size (9 for first-digit, 10 for other digits, 26 for letters)
+  isFirstDigit?: boolean; // true when this op was applied with the S=9 leading-zero-prevention alphabet
 }
 
 // Apply one MicroOp forward
@@ -98,8 +99,29 @@ function applyOp(v: number, k: number, size: number, muls: number[]): MicroOp {
 }
 
 // 5 micro-operations per character — encrypt
-function fpeEncryptChar5(ch: string, ks5: number[]): { out: string; microOps: MicroOp[] } {
+// charIdx: position of this character within the cell value (0 = first char).
+// When charIdx===0 and the character is a non-zero digit, the S=9 (1–9) alphabet
+// is used instead of S=10 so the encrypted first character is never '0'.
+// When charIdx===0 and the character is '0', it passes through unchanged (edge case).
+function fpeEncryptChar5(ch: string, ks5: number[], charIdx: number): { out: string; microOps: MicroOp[]; isLeadingZeroPassthrough?: boolean } {
   const code = ch.charCodeAt(0);
+
+  // ── Leading-zero-prevention at position 0 ────────────────────────
+  if (charIdx === 0 && code >= 48 && code <= 57) {
+    if (code === 48) return { out: ch, microOps: [], isLeadingZeroPassthrough: true }; // '0' passthrough
+    // '1'..'9' → S=9, base=49
+    const size = 9, base = 49;
+    const muls = getMuls(size);
+    let v = code - base;
+    const microOps: MicroOp[] = [];
+    for (let i = 0; i < 5; i++) {
+      const op = applyOp(v, ks5[i], size, muls);
+      microOps.push({ ...op, isFirstDigit: true });
+      v = op.vAfter;
+    }
+    return { out: String.fromCharCode(v + base), microOps };
+  }
+
   let base: number, size: number;
   if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
   else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
@@ -117,8 +139,39 @@ function fpeEncryptChar5(ch: string, ks5: number[]): { out: string; microOps: Mi
 }
 
 // 5 micro-operations per character — decrypt (reverses forward ops in reverse order)
-function fpeDecryptChar5(ch: string, ks5: number[]): { out: string; microOps: MicroOp[] } {
+function fpeDecryptChar5(ch: string, ks5: number[], charIdx: number): { out: string; microOps: MicroOp[]; isLeadingZeroPassthrough?: boolean } {
   const code = ch.charCodeAt(0);
+
+  // ── Leading-zero-prevention at position 0 (mirror of encrypt) ────
+  if (charIdx === 0 && code >= 48 && code <= 57) {
+    if (code === 48) return { out: ch, microOps: [], isLeadingZeroPassthrough: true }; // '0' passthrough
+    // '1'..'9' → S=9 inverse
+    const size = 9, base = 49;
+    const muls = getMuls(size);
+    const fwdParams = ks5.map(k => {
+      const opType = (k % 4) as 0|1|2|3;
+      let amount: number;
+      if (opType === 0 || opType === 1) amount = Math.floor(k / 4) % (size - 1) + 1;
+      else if (opType === 2) amount = muls[Math.floor(k / 4) % muls.length];
+      else amount = 0;
+      return { opType, amount };
+    });
+    let v = code - base;
+    const microOps: MicroOp[] = [];
+    for (let i = 4; i >= 0; i--) {
+      const { opType, amount } = fwdParams[i];
+      const vBefore = v;
+      let vAfter: number;
+      if (opType === 0) vAfter = ((v - amount) % size + size) % size;
+      else if (opType === 1) vAfter = (v + amount) % size;
+      else if (opType === 2) vAfter = (v * modInverse(amount, size)) % size;
+      else vAfter = (size - 1 - v + size) % size;
+      microOps.push({ opType, k: ks5[i], amount, vBefore, vAfter, size, isFirstDigit: true });
+      v = vAfter;
+    }
+    return { out: String.fromCharCode(v + base), microOps };
+  }
+
   let base: number, size: number;
   if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
   else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
@@ -160,19 +213,19 @@ function runRound(value: string, ks: Uint8Array, mode: "enc" | "dec"): { output:
     const ch = chars[idx];
     const ks5 = Array.from({ length: 5 }, () => ks[ki++ % ks.length]);
     if (mode === "enc") {
-      const { out, microOps } = fpeEncryptChar5(ch, ks5);
-      charShifts.push({ from: ch, to: out, k: ks5[0], changed: ch !== out, microOps });
+      const { out, microOps, isLeadingZeroPassthrough } = fpeEncryptChar5(ch, ks5, idx);
+      charShifts.push({ from: ch, to: out, k: ks5[0], changed: ch !== out, microOps, isLeadingZeroPassthrough });
       output += out;
     } else {
-      const { out, microOps } = fpeDecryptChar5(ch, ks5);
-      charShifts.push({ from: ch, to: out, k: ks5[0], changed: ch !== out, microOps });
+      const { out, microOps, isLeadingZeroPassthrough } = fpeDecryptChar5(ch, ks5, idx);
+      charShifts.push({ from: ch, to: out, k: ks5[0], changed: ch !== out, microOps, isLeadingZeroPassthrough });
       output += out;
     }
   }
   return { output, charShifts };
 }
 
-interface CharShift { from: string; to: string; k: number; changed: boolean; microOps: MicroOp[]; }
+interface CharShift { from: string; to: string; k: number; changed: boolean; microOps: MicroOp[]; isLeadingZeroPassthrough?: boolean; }
 
 interface KeyDerivStep {
   seedIdx: number;
@@ -485,7 +538,7 @@ function exportTracePDF(trace: Trace, seeds: number[], colName: string, cellValu
   <div class="phase-heading" style="page-break-before:always">Phase 2 — Encryption <span class="phase-sub">4 rounds of Format-Preserving Encryption applied in order</span></div>
   <p style="font-size:10px;color:#475569;margin-bottom:10px;line-height:1.6">
     Each round derives a keystream from the round key and the column IV. Each alphanumeric character is shifted forward
-    within its alphabet (digits 0–9, uppercase A–Z, lowercase a–z) by <em>1 + (keyByte mod alphabetSize)</em>.
+    within its alphabet (first digit: 1–9 / other digits: 0–9, uppercase A–Z, lowercase a–z) by <em>1 + (keyByte mod alphabetSize)</em>.
     Symbols are left unchanged. The 4 rounds are applied in sequence (R1 → R2 → R3 → R4).
   </p>
   ${encRoundSections}
@@ -1574,7 +1627,7 @@ export function GuideSection() {
                       <span className="font-semibold text-slate-600">Example:</span> digit '3' (position 3) × 7 = 21 → 21 mod 10 = 1 → '1'. Decrypt: 1 × 3 (the modular inverse of 7 mod 10) = 3 ✓
                     </div>
                     <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-violet-800">
-                      <strong>Coprime multipliers used:</strong> digits (S=10) → {'{'}3, 7, 9{'}'} &nbsp;|&nbsp; letters (S=26) → {'{'}3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25{'}'}
+                      <strong>Coprime multipliers used:</strong> first digit (S=9) → {'{'}2, 4, 5, 7, 8{'}'} &nbsp;|&nbsp; other digits (S=10) → {'{'}3, 7, 9{'}'} &nbsp;|&nbsp; letters (S=26) → {'{'}3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25{'}'}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
@@ -1749,9 +1802,14 @@ export function GuideSection() {
                                     <td colSpan={11} className="px-4 py-4">
                                       <div className="flex items-center gap-3">
                                         <span className="font-mono font-black text-xl text-slate-500">{s.from}</span>
-                                        <span className="text-xs text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-4 py-1.5">
-                                           Symbol / space — not transformed to preserve CSV formatting; five keystream bytes are still consumed for synchronization.
-                                        </span>
+                                        {s.isLeadingZeroPassthrough
+                                          ? <span className="text-xs text-amber-700 bg-amber-50 border border-amber-300 rounded-full px-4 py-1.5 font-semibold">
+                                              First digit '0' — passed through unchanged (leading-zero preservation); five keystream bytes are still consumed for synchronization.
+                                            </span>
+                                          : <span className="text-xs text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-4 py-1.5">
+                                              Symbol / space — not transformed to preserve CSV formatting; five keystream bytes are still consumed for synchronization.
+                                            </span>
+                                        }
                                       </div>
                                     </td>
                                   </tr>
@@ -1843,7 +1901,10 @@ export function GuideSection() {
                                       </td>
                                       {/* Alphabet */}
                                       <td className="px-4 py-3.5 align-middle">
-                                        <span className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 whitespace-nowrap">{alphabetLabel(op.size)}</span>
+                                        <div className="flex flex-col gap-1">
+                                          <span className={`text-xs bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 whitespace-nowrap ${op.isFirstDigit ? "text-amber-700 bg-amber-50 border-amber-300" : "text-slate-500"}`}>{alphabetLabel(op.size)}</span>
+                                          {op.isFirstDigit && <span className="text-[9px] text-amber-600 font-semibold whitespace-nowrap">leading zero prevention</span>}
+                                        </div>
                                       </td>
                                       {/* v before → after */}
                                       <td className="px-4 py-3.5 align-middle">
@@ -1949,7 +2010,9 @@ export function GuideSection() {
                   </tr></thead>
                   <tbody>
                     {[
-                      ["Digit (0–9)", "v = c−48; apply 5 forward ops with S=10; output = 48+v", "Start at v = c−48; apply inverse ops 5→1 with S=10; output = 48+v", "The inverse of add is subtract, the inverse of subtract is add, multiply uses its modular inverse, and flip is self-inverse."],
+                      ["First digit '1'–'9'", "v = c−49; apply 5 forward ops with S=9; output = 49+v (always '1'–'9')", "Start at v = c−49; apply inverse ops 5→1 with S=9; output = 49+v", "S=9 (alphabet 1–9) guarantees the first character of the output is never '0'. All 4 rounds use this alphabet at position 0, so intermediates are always in '1'–'9' and decryption can mirror the choice exactly."],
+                      ["First digit '0'", "passed through unchanged; 5 keystream bytes consumed for sync", "passed through unchanged; 5 keystream bytes consumed for sync", "Edge case: '0' cannot be represented in the 1–9 alphabet, so it is preserved as-is across all rounds. The encrypted value will also start with '0'."],
+                      ["Other digits (0–9)", "v = c−48; apply 5 forward ops with S=10; output = 48+v", "Start at v = c−48; apply inverse ops 5→1 with S=10; output = 48+v", "Standard alphabet for all digit positions other than the first."],
                       ["Uppercase (A–Z)", "v = c−65; apply 5 forward ops with S=26; output = 65+v", "Start at v = c−65; apply inverse ops 5→1 with S=26; output = 65+v", "The same five bytes and operation parameters are reconstructed from the key stream."],
                       ["Lowercase (a–z)", "v = c−97; apply 5 forward ops with S=26; output = 97+v", "Start at v = c−97; apply inverse ops 5→1 with S=26; output = 97+v", "Same as uppercase, with base 97; case is preserved."],
                       ["Symbol / other", "unchanged", "unchanged", "Nothing to undo."],

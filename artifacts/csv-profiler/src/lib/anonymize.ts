@@ -116,18 +116,37 @@ function applyOpInv(v: number, k: number, size: number, muls: number[]): number 
 
 // Encrypt one cell value through one round.
 // Consumes exactly 5 keystream bytes per character (alphanumeric or not).
-// Alphabet selection is purely by character type — no leading-digit special case —
-// so the mapping is unambiguously invertible regardless of intermediate values.
+//
+// Leading-zero-prevention rule (position 0 only):
+//   • digit '1'..'9' at position 0 → use S=9 alphabet {1…9} (base=49).
+//     Output is always in '1'..'9', so the first character of the final
+//     anonymized value is guaranteed non-zero.
+//   • digit '0' at position 0 → pass through unchanged; 5 keystream bytes
+//     are still consumed for alignment.  This is the edge-case for source
+//     values that legitimately begin with 0.
+//   • all other positions → standard S=10 digit alphabet (base=48).
 function encryptFPECell(ksBytes: Uint8Array, value: string): string {
   const chars = [...value];
   let ki = 0;
-  return chars.map((ch) => {
+  return chars.map((ch, charIdx) => {
     const code = ch.charCodeAt(0);
+
+    // ── Position-0 leading-zero-prevention ───────────────────────────
+    if (charIdx === 0 && code >= 48 && code <= 57) {
+      if (code === 48) { ki += 5; return ch; }   // '0' — passthrough
+      // '1'..'9' — S=9 alphabet: positions 0–8 map to chars '1'–'9'
+      const size = 9, base = 49;
+      const muls = getMuls(size);
+      let v = code - base;
+      for (let i = 0; i < 5; i++) v = applyOpFwd(v, ksBytes[ki++ % ksBytes.length], size, muls);
+      return String.fromCharCode(v + base);
+    }
+
     let base: number, size: number;
     if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
     else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
     else if (code >= 97 && code <= 122) { base = 97; size = 26; }
-    else { ki += 5; return ch; } // skip, but still advance 5 bytes to stay in sync
+    else { ki += 5; return ch; } // skip non-alphanumeric, keep ks offset aligned
     const muls = getMuls(size);
     let v = code - base;
     for (let i = 0; i < 5; i++) v = applyOpFwd(v, ksBytes[ki++ % ksBytes.length], size, muls);
@@ -137,11 +156,28 @@ function encryptFPECell(ksBytes: Uint8Array, value: string): string {
 
 // Decrypt one cell value through one round (exact inverse of encryptFPECell).
 // Reads the same 5 keystream bytes as encryption, applies inverse ops in reverse order.
+// Alphabet selection mirrors encryptFPECell exactly so the mapping is invertible:
+//   • '1'..'9' at position 0 → S=9 (same as encrypt used S=9)
+//   • '0' at position 0 → passthrough (encrypt also passed through '0')
 function decryptFPECell(ksBytes: Uint8Array, value: string): string {
   const chars = [...value];
   let ki = 0;
-  return chars.map((ch) => {
+  return chars.map((ch, charIdx) => {
     const code = ch.charCodeAt(0);
+
+    // ── Position-0 leading-zero-prevention (mirror of encrypt) ───────
+    if (charIdx === 0 && code >= 48 && code <= 57) {
+      if (code === 48) { ki += 5; return ch; }   // '0' — passthrough
+      // '1'..'9' — S=9 inverse
+      const size = 9, base = 49;
+      const muls = getMuls(size);
+      const ks5: number[] = [];
+      for (let i = 0; i < 5; i++) ks5.push(ksBytes[ki++ % ksBytes.length]);
+      let v = code - base;
+      for (let i = 4; i >= 0; i--) v = applyOpInv(v, ks5[i], size, muls);
+      return String.fromCharCode(v + base);
+    }
+
     let base: number, size: number;
     if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
     else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
