@@ -279,7 +279,7 @@ function exportTracePDF(trace: Trace, seeds: number[], colName: string, cellValu
 
   function charTable(shifts: CharShift[], stageLabel: string, outputLabel: string, phase: "enc" | "dec"): string {
     const rows = shifts.map((s, i) => {
-      const netShift = s.changed && s.microOps.length > 0
+      const netShift = s.microOps.length > 0
         ? (() => {
             const vB = s.microOps[0].vBefore;
             const vA = s.microOps[s.microOps.length - 1].vAfter;
@@ -599,7 +599,7 @@ const OP_BADGE: Record<number, { label: (n: number) => string; cls: string }> = 
 };
 
 function ShiftBubble({ shift }: { shift: CharShift }) {
-  if (!shift.changed || shift.microOps.length === 0) {
+  if (shift.microOps.length === 0) {
     return (
       <div className="flex flex-col items-center gap-1 px-2">
         <span className="text-2xl font-mono font-bold text-slate-400">{shift.from}</span>
@@ -1636,7 +1636,7 @@ export function GuideSection() {
               <div className="rounded-xl bg-slate-100 border border-slate-200 p-4 flex gap-3 items-start text-sm text-slate-600">
                 <span className="text-lg leading-none">ℹ️</span>
                 <div>
-                  <strong>Symbols, spaces, and punctuation</strong> — All 5 sub-ops are skipped entirely. These characters pass through unchanged so that the CSV structure (commas, newlines) is always preserved.
+                  <strong>Symbols, spaces, and punctuation</strong> — These non-alphanumeric characters are intentionally not transformed so CSV structure remains valid. They still consume five keystream bytes so the next value stays synchronized.
                 </div>
               </div>
             </BigCard>
@@ -1742,7 +1742,7 @@ export function GuideSection() {
                                 return `S=${size}`;
                               };
 
-                              if (!s.changed || s.microOps.length === 0) {
+                              if (s.microOps.length === 0) {
                                 return [
                                   ...sep,
                                   <tr key={`s-${ci}`} className={`${CHAR_BG}`}>
@@ -1750,7 +1750,7 @@ export function GuideSection() {
                                       <div className="flex items-center gap-3">
                                         <span className="font-mono font-black text-xl text-slate-500">{s.from}</span>
                                         <span className="text-xs text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-4 py-1.5">
-                                          Symbol / space — all 5 sub-ops are skipped. The character passes through unchanged to preserve CSV formatting.
+                                           Symbol / space — not transformed to preserve CSV formatting; five keystream bytes are still consumed for synchronization.
                                         </span>
                                       </div>
                                     </td>
