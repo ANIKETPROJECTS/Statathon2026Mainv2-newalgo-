@@ -83,11 +83,17 @@ function modInverse(a: number, m: number): number {
   return ((s0 % m) + m) % m;
 }
 
+// Ordered alphabet of all printable non-alphanumeric ASCII characters (S=33).
+// Covers: space, !"#$%&'()*+,-./ (33–47), :;<=>?@ (58–64), [\]^_` (91–96), {|}~ (123–126).
+// Symbols are mapped to indices 0–32 and treated like any other character class.
+const SYMBOL_CHARS = ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
+
 // Precomputed coprime multipliers per alphabet size (all m in [2,S) with gcd(m,S)=1)
 const COPRIME_MULS: Record<number, number[]> = {
   9:  [2, 4, 5, 7, 8],
   10: [3, 7, 9],
   26: [3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25],
+  33: [2, 4, 5, 7, 8, 10, 13, 14, 16, 17, 19, 20, 23, 25, 26, 28, 29, 31, 32], // 33=3×11
 };
 function getMuls(size: number): number[] {
   if (COPRIME_MULS[size]) return COPRIME_MULS[size];
@@ -146,7 +152,18 @@ function encryptFPECell(ksBytes: Uint8Array, value: string): string {
     if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
     else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
     else if (code >= 97 && code <= 122) { base = 97; size = 26; }
-    else { ki += 5; return ch; } // skip non-alphanumeric, keep ks offset aligned
+    else {
+      // Printable symbol → encrypt within SYMBOL_CHARS alphabet (S=33)
+      const symIdx = SYMBOL_CHARS.indexOf(ch);
+      if (symIdx !== -1) {
+        const symSize = SYMBOL_CHARS.length;
+        const symMuls = getMuls(symSize);
+        let v = symIdx;
+        for (let i = 0; i < 5; i++) v = applyOpFwd(v, ksBytes[ki++ % ksBytes.length], symSize, symMuls);
+        return SYMBOL_CHARS[v];
+      }
+      ki += 5; return ch; // non-printable / out-of-range — keep ks offset aligned
+    }
     const muls = getMuls(size);
     let v = code - base;
     for (let i = 0; i < 5; i++) v = applyOpFwd(v, ksBytes[ki++ % ksBytes.length], size, muls);
@@ -182,7 +199,20 @@ function decryptFPECell(ksBytes: Uint8Array, value: string): string {
     if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
     else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
     else if (code >= 97 && code <= 122) { base = 97; size = 26; }
-    else { ki += 5; return ch; }
+    else {
+      // Printable symbol → decrypt within SYMBOL_CHARS alphabet (S=33)
+      const symIdx = SYMBOL_CHARS.indexOf(ch);
+      if (symIdx !== -1) {
+        const symSize = SYMBOL_CHARS.length;
+        const symMuls = getMuls(symSize);
+        const ks5: number[] = [];
+        for (let i = 0; i < 5; i++) ks5.push(ksBytes[ki++ % ksBytes.length]);
+        let v = symIdx;
+        for (let i = 4; i >= 0; i--) v = applyOpInv(v, ks5[i], symSize, symMuls);
+        return SYMBOL_CHARS[v];
+      }
+      ki += 5; return ch; // non-printable / out-of-range
+    }
     const muls = getMuls(size);
     // Collect 5 keystream bytes in forward order (same positions as encryption)
     const ks5: number[] = [];

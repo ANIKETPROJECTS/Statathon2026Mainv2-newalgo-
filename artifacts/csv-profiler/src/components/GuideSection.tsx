@@ -52,11 +52,16 @@ function modInverse(a: number, m: number): number {
   return ((s0 % m) + m) % m;
 }
 
+// Ordered alphabet of all printable non-alphanumeric ASCII characters (S=33).
+// Covers: space, !"#$%&'()*+,-./ (33–47), :;<=>?@ (58–64), [\]^_` (91–96), {|}~ (123–126).
+const SYMBOL_CHARS = ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
+
 // Precomputed coprime multipliers per alphabet size (excluding 1)
 const COPRIME_MULS: Record<number, number[]> = {
   9:  [2, 4, 5, 7, 8],
   10: [3, 7, 9],
   26: [3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25],
+  33: [2, 4, 5, 7, 8, 10, 13, 14, 16, 17, 19, 20, 23, 25, 26, 28, 29, 31, 32], // 33=3×11
 };
 function getMuls(size: number): number[] {
   if (COPRIME_MULS[size]) return COPRIME_MULS[size];
@@ -126,7 +131,23 @@ function fpeEncryptChar5(ch: string, ks5: number[], charIdx: number): { out: str
   if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
   else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
   else if (code >= 97 && code <= 122) { base = 97; size = 26; }
-  else return { out: ch, microOps: [] };
+  else {
+    // Printable symbol → encrypt within SYMBOL_CHARS alphabet (S=33)
+    const symIdx = SYMBOL_CHARS.indexOf(ch);
+    if (symIdx !== -1) {
+      const symSize = SYMBOL_CHARS.length;
+      const symMuls = getMuls(symSize);
+      let v = symIdx;
+      const microOps: MicroOp[] = [];
+      for (let i = 0; i < 5; i++) {
+        const op = applyOp(v, ks5[i], symSize, symMuls);
+        microOps.push(op);
+        v = op.vAfter;
+      }
+      return { out: SYMBOL_CHARS[v], microOps };
+    }
+    return { out: ch, microOps: [] }; // non-printable / out-of-range
+  }
   const muls = getMuls(size);
   let v = code - base;
   const microOps: MicroOp[] = [];
@@ -176,7 +197,37 @@ function fpeDecryptChar5(ch: string, ks5: number[], charIdx: number): { out: str
   if      (code >= 48 && code <= 57)  { base = 48; size = 10; }
   else if (code >= 65 && code <= 90)  { base = 65; size = 26; }
   else if (code >= 97 && code <= 122) { base = 97; size = 26; }
-  else return { out: ch, microOps: [] };
+  else {
+    // Printable symbol → decrypt within SYMBOL_CHARS alphabet (S=33)
+    const symIdx = SYMBOL_CHARS.indexOf(ch);
+    if (symIdx !== -1) {
+      const symSize = SYMBOL_CHARS.length;
+      const symMuls = getMuls(symSize);
+      const fwdParams = ks5.map(k => {
+        const opType = (k % 4) as 0|1|2|3;
+        let amount: number;
+        if (opType === 0 || opType === 1) amount = Math.floor(k / 4) % (symSize - 1) + 1;
+        else if (opType === 2) amount = symMuls[Math.floor(k / 4) % symMuls.length];
+        else amount = 0;
+        return { opType, amount };
+      });
+      let v = symIdx;
+      const microOps: MicroOp[] = [];
+      for (let i = 4; i >= 0; i--) {
+        const { opType, amount } = fwdParams[i];
+        const vBefore = v;
+        let vAfter: number;
+        if (opType === 0) vAfter = ((v - amount) % symSize + symSize) % symSize;
+        else if (opType === 1) vAfter = (v + amount) % symSize;
+        else if (opType === 2) vAfter = (v * modInverse(amount, symSize)) % symSize;
+        else vAfter = (symSize - 1 - v + symSize) % symSize;
+        microOps.push({ opType, k: ks5[i], amount, vBefore, vAfter, size: symSize });
+        v = vAfter;
+      }
+      return { out: SYMBOL_CHARS[v], microOps };
+    }
+    return { out: ch, microOps: [] }; // non-printable / out-of-range
+  }
   const muls = getMuls(size);
   // Reconstruct forward op parameters (amount & type) from ks5 — independent of v
   const fwdParams = ks5.map(k => {
@@ -538,8 +589,8 @@ function exportTracePDF(trace: Trace, seeds: number[], colName: string, cellValu
   <div class="phase-heading" style="page-break-before:always">Phase 2 — Encryption <span class="phase-sub">4 rounds of Format-Preserving Encryption applied in order</span></div>
   <p style="font-size:10px;color:#475569;margin-bottom:10px;line-height:1.6">
     Each round derives a keystream from the round key and the column IV. Each alphanumeric character is shifted forward
-    within its alphabet (first digit: 1–9 / other digits: 0–9, uppercase A–Z, lowercase a–z) by <em>1 + (keyByte mod alphabetSize)</em>.
-    Symbols are left unchanged. The 4 rounds are applied in sequence (R1 → R2 → R3 → R4).
+    within its alphabet (first digit: 1–9, other digits: 0–9, uppercase A–Z, lowercase a–z, symbols: S=33) by <em>1 + (keyByte mod alphabetSize)</em>.
+    Non-printable characters are left unchanged. The 4 rounds are applied in sequence (R1 → R2 → R3 → R4).
   </p>
   ${encRoundSections}
 
@@ -1627,7 +1678,7 @@ export function GuideSection() {
                       <span className="font-semibold text-slate-600">Example:</span> digit '3' (position 3) × 7 = 21 → 21 mod 10 = 1 → '1'. Decrypt: 1 × 3 (the modular inverse of 7 mod 10) = 3 ✓
                     </div>
                     <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-xs text-violet-800">
-                      <strong>Coprime multipliers used:</strong> first digit (S=9) → {'{'}2, 4, 5, 7, 8{'}'} &nbsp;|&nbsp; other digits (S=10) → {'{'}3, 7, 9{'}'} &nbsp;|&nbsp; letters (S=26) → {'{'}3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25{'}'}
+                      <strong>Coprime multipliers used:</strong> first digit (S=9) → {'{'}2,4,5,7,8{'}'} &nbsp;|&nbsp; other digits (S=10) → {'{'}3,7,9{'}'} &nbsp;|&nbsp; letters (S=26) → {'{'}3,5,7,9,11,15,17,19,21,23,25{'}'} &nbsp;|&nbsp; symbols (S=33) → {'{'}2,4,5,7,8,10,13,14,16,17,19,20,23,25,26,28,29,31,32{'}'}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
@@ -1689,7 +1740,7 @@ export function GuideSection() {
               <div className="rounded-xl bg-slate-100 border border-slate-200 p-4 flex gap-3 items-start text-sm text-slate-600">
                 <span className="text-lg leading-none">ℹ️</span>
                 <div>
-                  <strong>Symbols, spaces, and punctuation</strong> — These non-alphanumeric characters are intentionally not transformed so CSV structure remains valid. They still consume five keystream bytes so the next value stays synchronized.
+                  <strong>Symbols, spaces, and punctuation</strong> — All printable keyboard symbols (S=33 alphabet: <code className="font-mono bg-white rounded px-1">{'  !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'}</code>) are now encrypted just like digits and letters — they map to a different symbol on output. Only non-printable control characters are left unchanged.
                 </div>
               </div>
             </BigCard>
@@ -1792,6 +1843,7 @@ export function GuideSection() {
                                 if (size === 9)  return "digits 1–9 (S=9)";
                                 if (size === 10) return "digits 0–9 (S=10)";
                                 if (size === 26) return s.from >= 'a' && s.from <= 'z' ? "a–z lowercase (S=26)" : "A–Z uppercase (S=26)";
+                                if (size === 33) return "symbols (S=33)";
                                 return `S=${size}`;
                               };
 
@@ -1807,7 +1859,7 @@ export function GuideSection() {
                                               First digit '0' — passed through unchanged (leading-zero preservation); five keystream bytes are still consumed for synchronization.
                                             </span>
                                           : <span className="text-xs text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-4 py-1.5">
-                                              Symbol / space — not transformed to preserve CSV formatting; five keystream bytes are still consumed for synchronization.
+                                              Non-printable character — passed through unchanged; five keystream bytes are still consumed for synchronization.
                                             </span>
                                         }
                                       </div>
@@ -2015,7 +2067,8 @@ export function GuideSection() {
                       ["Other digits (0–9)", "v = c−48; apply 5 forward ops with S=10; output = 48+v", "Start at v = c−48; apply inverse ops 5→1 with S=10; output = 48+v", "Standard alphabet for all digit positions other than the first."],
                       ["Uppercase (A–Z)", "v = c−65; apply 5 forward ops with S=26; output = 65+v", "Start at v = c−65; apply inverse ops 5→1 with S=26; output = 65+v", "The same five bytes and operation parameters are reconstructed from the key stream."],
                       ["Lowercase (a–z)", "v = c−97; apply 5 forward ops with S=26; output = 97+v", "Start at v = c−97; apply inverse ops 5→1 with S=26; output = 97+v", "Same as uppercase, with base 97; case is preserved."],
-                      ["Symbol / other", "unchanged", "unchanged", "Nothing to undo."],
+                      ["Printable symbol", "symIdx = SYMBOL_CHARS.indexOf(c); apply 5 forward ops with S=33; output = SYMBOL_CHARS[v]", "symIdx = SYMBOL_CHARS.indexOf(c); apply inverse ops 5→1 with S=33; output = SYMBOL_CHARS[v]", "Symbols map to symbols within the 33-character printable-symbol alphabet, so character class is preserved — a symbol in, a symbol out."],
+                      ["Non-printable / other", "unchanged", "unchanged", "Control characters and non-ASCII bytes are never transformed."],
                     ].map(([type, enc, dec, why]) => (
                       <tr key={type as string} className="border-t border-slate-100">
                         <td className="px-3 py-3 font-semibold text-slate-700 align-top">{type}</td>
@@ -2371,7 +2424,7 @@ export function GuideSection() {
                     name: "Format-Preserving (FPE)",
                     icon: "🔄",
                     badge: "bg-green-100 text-green-700",
-                    body: "Digits stay digits, letters stay letters, symbols stay symbols. The anonymized value has the same shape as the original, so existing research tools work without modification.",
+                    body: "Digits stay digits, letters stay letters, symbols stay symbols. Each character class maps only within its own alphabet — the anonymized value has the same shape as the original, so existing research tools work without modification.",
                     check: true
                   },
                   {
